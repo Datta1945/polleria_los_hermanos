@@ -1,0 +1,247 @@
+import { Venta, VentaItem, Producto, User, Cliente } from "../models/index.js";
+import { Op } from "sequelize";
+
+const generarNumeroComprobante = async () => {
+  const today = new Date().toISOString().split("T")[0];
+  const count = await Venta.count({
+    where: { fecha: today },
+  });
+  const num = String(count + 1).padStart(4, "0");
+  return `VTA-${today.replace(/-/g, "")}-${num}`;
+};
+
+export const crearVenta = async (req, res) => {
+  try {
+    const {
+      tipo_venta,
+      cliente_nombre,
+      cliente_direccion,
+      cliente_telefono,
+      medio_pago,
+      clienteId,
+      notas,
+      items,
+    } = req.body;
+
+    if (!items || items.length === 0) {
+      return res.status(400).json({ message: "Debe agregar al menos un producto" });
+    }
+
+    for (const item of items) {
+      const producto = await Producto.findByPk(item.productoId);
+      if (!producto) {
+        return res.status(400).json({ message: `Producto ID ${item.productoId} no encontrado` });
+      }
+      if (producto.stock < item.cantidad) {
+        return res.status(400).json({
+          message: `Stock insuficiente para "${producto.nombre}": disponible ${producto.stock}, solicitado ${item.cantidad}`,
+        });
+      }
+    }
+
+    let subtotalCalc = 0;
+    for (const item of items) {
+      const producto = await Producto.findByPk(item.productoId);
+      subtotalCalc += parseFloat(producto.precio) * item.cantidad;
+    }
+
+    if (medio_pago === "cuenta_corriente") {
+      if (!clienteId) {
+        return res.status(400).json({ message: "Debe seleccionar un cliente para cuenta corriente" });
+      }
+      const cliente = await Cliente.findByPk(clienteId);
+      if (!cliente) {
+        return res.status(400).json({ message: "Cliente no encontrado" });
+      }
+      const nuevoSaldo = parseFloat(cliente.saldo_pendiente) + subtotalCalc;
+      if (nuevoSaldo > parseFloat(cliente.limite_credito)) {
+        return res.status(400).json({
+          message: `El cliente excede su limite de credito. Debe actual: $${cliente.saldo_pendiente}, limite: $${cliente.limite_credito}, compra: $${subtotalCalc.toFixed(2)}`,
+        });
+      }
+      await cliente.update({ saldo_pendiente: nuevoSaldo.toFixed(2) });
+    }
+
+    const now = new Date();
+    const hora = now.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const numeroComprobante = await generarNumeroComprobante();
+
+    const venta = await Venta.create({
+      numero_comprobante: numeroComprobante,
+      fecha: now.toISOString().split("T")[0],
+      hora,
+      tipo_venta: tipo_venta || "local",
+      cliente_nombre,
+      cliente_direccion,
+      cliente_telefono,
+      medio_pago: medio_pago || "efectivo",
+      subtotal: subtotalCalc.toFixed(2),
+      total: subtotalCalc.toFixed(2),
+      clienteId: medio_pago === "cuenta_corriente" ? clienteId : null,
+      notas,
+      usuarioId: req.user.id,
+    });
+
+    for (const item of items) {
+      const producto = await Producto.findByPk(item.productoId);
+      await VentaItem.create({
+        ventaId: venta.id,
+        productoId: item.productoId,
+        cantidad: item.cantidad,
+        precio_unitario: producto.precio,
+      });
+      await producto.update({ stock: producto.stock - item.cantidad });
+    }
+
+    const ventaCompleta = await Venta.findByPk(venta.id, {
+      include: [
+        {
+          model: VentaItem,
+          include: [{ model: Producto, attributes: ["id", "nombre", "precio"] }],
+        },
+        { model: User, as: "vendedor", attributes: ["id", "nombre"] },
+        { model: Cliente, as: "cliente", attributes: ["id", "nombre", "saldo_pendiente", "limite_credito"] },
+      ],
+    });
+
+    res.status(201).json({ message: "Venta registrada", venta: ventaCompleta });
+  } catch (error) {
+    res.status(500).json({ message: "Error al crear venta", error: error.message });
+  }
+};
+
+export const getVentas = async (req, res) => {
+  try {
+    const where = {};
+
+    if (req.userRole === "repartidor") {
+      where.usuarioId = req.user.id;
+    }
+
+    if (req.query.fecha) where.fecha = req.query.fecha;
+    if (req.query.tipo_venta) where.tipo_venta = req.query.tipo_venta;
+    if (req.query.usuarioId) where.usuarioId = req.query.usuarioId;
+    if (req.query.medio_pago) where.medio_pago = req.query.medio_pago;
+    if (req.query.cliente_nombre) {
+      where.cliente_nombre = { [Op.like]: `%${req.query.cliente_nombre}%` };
+    }
+    if (req.query.numero_comprobante) {
+      where.numero_comprobante = { [Op.like]: `%${req.query.numero_comprobante}%` };
+    }
+
+    const ventas = await Venta.findAll({
+      where,
+      include: [
+        {
+          model: VentaItem,
+          include: [{ model: Producto, attributes: ["id", "nombre", "precio"] }],
+        },
+        { model: User, as: "vendedor", attributes: ["id", "nombre"] },
+        { model: Cliente, as: "cliente", attributes: ["id", "nombre", "saldo_pendiente"] },
+      ],
+      order: [["createdAt", "DESC"]],
+    });
+
+    res.json(ventas);
+  } catch (error) {
+    res.status(500).json({ message: "Error al obtener ventas", error: error.message });
+  }
+};
+
+export const getVentaById = async (req, res) => {
+  try {
+    const venta = await Venta.findByPk(req.params.id, {
+      include: [
+        {
+          model: VentaItem,
+          include: [{ model: Producto }],
+        },
+        { model: User, as: "vendedor", attributes: ["id", "nombre"] },
+        { model: Cliente, as: "cliente" },
+      ],
+    });
+
+    if (!venta) {
+      return res.status(404).json({ message: "Venta no encontrada" });
+    }
+
+    res.json(venta);
+  } catch (error) {
+    res.status(500).json({ message: "Error al obtener venta", error: error.message });
+  }
+};
+
+export const getVentasStats = async (req, res) => {
+  try {
+    const today = new Date().toISOString().split("T")[0];
+
+    const where = { fecha: today, estado: "completada" };
+
+    const totalVentas = await Venta.count({ where });
+    const localVentas = await Venta.count({ where: { ...where, tipo_venta: "local" } });
+    const repartoVentas = await Venta.count({ where: { ...where, tipo_venta: "reparto" } });
+
+    const todasHoy = await Venta.findAll({ where, attributes: ["total", "tipo_venta"] });
+
+    let totalMonto = 0;
+    let localMonto = 0;
+    let repartoMonto = 0;
+
+    for (const v of todasHoy) {
+      const monto = parseFloat(v.total) || 0;
+      totalMonto += monto;
+      if (v.tipo_venta === "local") localMonto += monto;
+      else repartoMonto += monto;
+    }
+
+    res.json({
+      fecha: today,
+      total_ventas: totalVentas,
+      local_ventas: localVentas,
+      reparto_ventas: repartoVentas,
+      total_monto: totalMonto.toFixed(2),
+      local_monto: localMonto.toFixed(2),
+      reparto_monto: repartoMonto.toFixed(2),
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Error al obtener estadisticas", error: error.message });
+  }
+};
+
+export const deleteVenta = async (req, res) => {
+  try {
+    if (req.userRole !== "admin") {
+      return res.status(403).json({ message: "Solo admin puede eliminar ventas" });
+    }
+
+    const venta = await Venta.findByPk(req.params.id, {
+      include: [{ model: VentaItem }],
+    });
+
+    if (!venta) {
+      return res.status(404).json({ message: "Venta no encontrada" });
+    }
+
+    if (venta.medio_pago === "cuenta_corriente" && venta.clienteId) {
+      const cliente = await Cliente.findByPk(venta.clienteId);
+      if (cliente) {
+        const nuevoSaldo = Math.max(0, parseFloat(cliente.saldo_pendiente) - parseFloat(venta.total));
+        await cliente.update({ saldo_pendiente: nuevoSaldo.toFixed(2) });
+      }
+    }
+
+    for (const item of venta.VentaItems) {
+      const prod = await Producto.findByPk(item.productoId);
+      if (prod) {
+        await prod.update({ stock: prod.stock + item.cantidad });
+      }
+    }
+
+    await VentaItem.destroy({ where: { ventaId: venta.id } });
+    await venta.destroy();
+
+    res.json({ message: "Venta eliminada y stock restaurado" });
+  } catch (error) {
+    res.status(500).json({ message: "Error al eliminar venta", error: error.message });
+  }
+};

@@ -1,0 +1,175 @@
+import { useState, useEffect } from "react";
+import { useAuth } from "../context/AuthContext";
+import { ventasAPI } from "../api";
+import { generarComprobantePDF } from "../utils/generarPDF";
+
+export default function HistorialVentasPage() {
+  const { user } = useAuth();
+  const [ventas, setVentas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filtros, setFiltros] = useState({
+    fecha: "",
+    cliente_nombre: "",
+    numero_comprobante: "",
+    tipo_venta: "",
+    usuarioId: "",
+  });
+
+  useEffect(() => {
+    loadVentas();
+  }, []);
+
+  const loadVentas = async (params = {}) => {
+    setLoading(true);
+    try {
+      const res = await ventasAPI.getAll(params);
+      setVentas(res.data);
+    } catch (error) {
+      console.error("Error:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFiltro = (e) => {
+    setFiltros({ ...filtros, [e.target.name]: e.target.value });
+  };
+
+  const buscar = () => {
+    const params = {};
+    Object.entries(filtros).forEach(([key, val]) => {
+      if (val) params[key] = val;
+    });
+    loadVentas(params);
+  };
+
+  const limpiarFiltros = () => {
+    setFiltros({ fecha: "", cliente_nombre: "", numero_comprobante: "", tipo_venta: "", usuarioId: "" });
+    loadVentas();
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm("¿Eliminar esta venta? El stock se restaurara.")) return;
+    try {
+      await ventasAPI.delete(id);
+      loadVentas();
+    } catch (error) {
+      alert("Error: " + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const medioPagoLabels = {
+    efectivo: "Efectivo",
+    transferencia: "Transferencia",
+    tarjeta: "Tarjeta",
+    cuenta_corriente: "Cuenta Corriente",
+    otro: "Otro",
+  };
+
+  if (loading) return <div className="loading">Cargando...</div>;
+
+  return (
+    <div>
+      <h2>Historial de Ventas</h2>
+
+      <div className="form-card filtros-card">
+        <div className="filtros-grid">
+          <div className="form-group">
+            <label>Fecha</label>
+            <input type="date" name="fecha" value={filtros.fecha} onChange={handleFiltro} />
+          </div>
+          <div className="form-group">
+            <label>Cliente</label>
+            <input name="cliente_nombre" value={filtros.cliente_nombre} onChange={handleFiltro} placeholder="Nombre..." />
+          </div>
+          <div className="form-group">
+            <label>Nro Comprobante</label>
+            <input name="numero_comprobante" value={filtros.numero_comprobante} onChange={handleFiltro} placeholder="VTA-..." />
+          </div>
+          <div className="form-group">
+            <label>Tipo</label>
+            <select name="tipo_venta" value={filtros.tipo_venta} onChange={handleFiltro}>
+              <option value="">Todos</option>
+              <option value="local">Local</option>
+              <option value="reparto">Reparto</option>
+            </select>
+          </div>
+          <div className="form-group filtros-btns">
+            <button className="btn btn-primary" onClick={buscar}>Buscar</button>
+            <button className="btn btn-secondary" onClick={limpiarFiltros}>Limpiar</button>
+          </div>
+        </div>
+      </div>
+
+      {ventas.length === 0 ? (
+        <p className="empty">No hay ventas registradas</p>
+      ) : (
+        <div className="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Nro</th>
+                <th>Fecha</th>
+                <th>Hora</th>
+                <th>Tipo</th>
+                <th>Cliente</th>
+                <th>Productos</th>
+                <th>Medio Pago</th>
+                <th>Total</th>
+                <th>Vendedor</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ventas.map((v) => (
+                <tr key={v.id}>
+                  <td><strong>{v.numero_comprobante}</strong></td>
+                  <td>{v.fecha}</td>
+                  <td>{v.hora}</td>
+                  <td>
+                    <span className={`badge badge-${v.tipo_venta}`}>
+                      {v.tipo_venta === "local" ? "Local" : "Reparto"}
+                    </span>
+                  </td>
+                  <td>
+                    {v.cliente_nombre}
+                    <br />
+                    <small>{v.cliente_direccion || ""}</small>
+                  </td>
+                  <td>
+                    {v.VentaItems?.map((item) => (
+                      <span key={item.id} className="badge">
+                        {item.cantidad}x {item.Producto?.nombre}
+                      </span>
+                    ))}
+                  </td>
+                  <td>{medioPagoLabels[v.medio_pago] || v.medio_pago}</td>
+                  <td><strong className="monto-ventas">${v.total}</strong></td>
+                  <td>{v.vendedor?.nombre || "-"}</td>
+                  <td>
+                    <div className="action-buttons">
+                      <button
+                        className="btn btn-sm btn-primary"
+                        onClick={() => generarComprobantePDF(v)}
+                      >
+                        PDF
+                      </button>
+                      {(user?.role === "admin") && (
+                        <button
+                          className="btn btn-sm btn-cancel"
+                          onClick={() => handleDelete(v.id)}
+                        >
+                          Eliminar
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
