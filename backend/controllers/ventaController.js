@@ -1,4 +1,4 @@
-import { Venta, VentaItem, Producto, User, Cliente } from "../models/index.js";
+import { Venta, VentaItem, VentaPago, Producto, User, Cliente, ClientePago, SalidaCamion, SalidaCamionItem } from "../models/index.js";
 import { Op } from "sequelize";
 
 const generarNumeroComprobante = async () => {
@@ -19,23 +19,84 @@ export const crearVenta = async (req, res) => {
       cliente_telefono,
       medio_pago,
       clienteId,
+      pagos,
       notas,
       items,
+      pagar_deuda,
+      monto_deuda,
+      salidaCamionId,
     } = req.body;
 
     if (!items || items.length === 0) {
       return res.status(400).json({ message: "Debe agregar al menos un producto" });
     }
 
-    for (const item of items) {
-      const producto = await Producto.findByPk(item.productoId);
-      if (!producto) {
-        return res.status(400).json({ message: `Producto ID ${item.productoId} no encontrado` });
+    if (!clienteId) {
+      return res.status(400).json({ message: "Debe seleccionar un cliente registrado" });
+    }
+
+    const cliente = await Cliente.findByPk(clienteId);
+    if (!cliente) {
+      return res.status(400).json({ message: "Cliente no encontrado" });
+    }
+
+    const esReparto = tipo_venta === "reparto";
+    let salidaCamion = null;
+
+    if (esReparto) {
+      if (!salidaCamionId) {
+        return res.status(400).json({ message: "Debe seleccionar un camion para venta por reparto" });
       }
-      if (producto.stock < item.cantidad) {
-        return res.status(400).json({
-          message: `Stock insuficiente para "${producto.nombre}": disponible ${producto.stock}, solicitado ${item.cantidad}`,
-        });
+      salidaCamion = await SalidaCamion.findByPk(salidaCamionId, {
+        include: [{ model: SalidaCamionItem }],
+      });
+      if (!salidaCamion) {
+        return res.status(400).json({ message: "Salida de camion no encontrada" });
+      }
+      if (!["en_camino", "entregado", "sobrante"].includes(salidaCamion.estado)) {
+        return res.status(400).json({ message: "El camion no esta disponible para ventas" });
+      }
+
+      const ventasExistentes = await Venta.findAll({
+        where: { salidaCamionId: salidaCamion.id, estado: "completada" },
+        include: [{ model: VentaItem, attributes: ["productoId", "cantidad"] }],
+      });
+
+      const stockCamion = {};
+      for (const item of salidaCamion.SalidaCamionItems) {
+        stockCamion[item.productoId] = item.cantidad - (item.cantidad_devuelta || 0);
+      }
+      for (const v of ventasExistentes) {
+        for (const vi of v.VentaItems) {
+          if (stockCamion[vi.productoId] !== undefined) {
+            stockCamion[vi.productoId] -= vi.cantidad;
+          }
+        }
+      }
+
+      for (const item of items) {
+        const producto = await Producto.findByPk(item.productoId);
+        if (!producto) {
+          return res.status(400).json({ message: `Producto ID ${item.productoId} no encontrado` });
+        }
+        const disp = stockCamion[item.productoId] || 0;
+        if (disp < item.cantidad) {
+          return res.status(400).json({
+            message: `Stock insuficiente en camion "${salidaCamion.camion}" para "${producto.nombre}": disponible ${disp}, solicitado ${item.cantidad}`,
+          });
+        }
+      }
+    } else {
+      for (const item of items) {
+        const producto = await Producto.findByPk(item.productoId);
+        if (!producto) {
+          return res.status(400).json({ message: `Producto ID ${item.productoId} no encontrado` });
+        }
+        if (producto.stock < item.cantidad) {
+          return res.status(400).json({
+            message: `Stock insuficiente para "${producto.nombre}": disponible ${producto.stock}, solicitado ${item.cantidad}`,
+          });
+        }
       }
     }
 
@@ -45,21 +106,64 @@ export const crearVenta = async (req, res) => {
       subtotalCalc += parseFloat(producto.precio) * item.cantidad;
     }
 
-    if (medio_pago === "cuenta_corriente") {
-      if (!clienteId) {
-        return res.status(400).json({ message: "Debe seleccionar un cliente para cuenta corriente" });
-      }
-      const cliente = await Cliente.findByPk(clienteId);
-      if (!cliente) {
-        return res.status(400).json({ message: "Cliente no encontrado" });
-      }
-      const nuevoSaldo = parseFloat(cliente.saldo_pendiente) + subtotalCalc;
-      if (nuevoSaldo > parseFloat(cliente.limite_credito)) {
+    const esPagoDividido = pagos && pagos.length > 0;
+
+    if (esPagoDividido) {
+      const sumaPagos = pagos.reduce((sum, p) => sum + parseFloat(p.monto), 0);
+      if (Math.abs(sumaPagos - subtotalCalc) > 0.01) {
         return res.status(400).json({
-          message: `El cliente excede su limite de credito. Debe actual: $${cliente.saldo_pendiente}, limite: $${cliente.limite_credito}, compra: $${subtotalCalc.toFixed(2)}`,
+          message: `La suma de los pagos ($${sumaPagos.toFixed(2)}) no coincide con el total ($${subtotalCalc.toFixed(2)})`,
         });
       }
+
+      const montoCC = pagos
+        .filter((p) => p.medio_pago === "cuenta_corriente")
+        .reduce((sum, p) => sum + parseFloat(p.monto), 0);
+
+      if (montoCC > 0) {
+        const nuevoSaldo = parseFloat(cliente.saldo_pendiente) + montoCC;
+        if (nuevoSaldo > parseFloat(cliente.limite_credito)) {
+          return res.status(400).json({
+            message: `El cliente excede su limite de credito. Debe actual: $${cliente.saldo_pendiente}, limite: $${cliente.limite_credito}, monto CC: $${montoCC.toFixed(2)}`,
+          });
+        }
+        await cliente.update({ saldo_pendiente: nuevoSaldo.toFixed(2) });
+      }
+    } else {
+      if (medio_pago === "cuenta_corriente") {
+        const nuevoSaldo = parseFloat(cliente.saldo_pendiente) + subtotalCalc;
+        if (nuevoSaldo > parseFloat(cliente.limite_credito)) {
+          return res.status(400).json({
+            message: `El cliente excede su limite de credito. Debe actual: $${cliente.saldo_pendiente}, limite: $${cliente.limite_credito}, compra: $${subtotalCalc.toFixed(2)}`,
+          });
+        }
+        await cliente.update({ saldo_pendiente: nuevoSaldo.toFixed(2) });
+      }
+    }
+
+    if (pagar_deuda && monto_deuda && parseFloat(monto_deuda) > 0) {
+      const deudaPagar = parseFloat(monto_deuda);
+      const saldoActual = parseFloat(cliente.saldo_pendiente);
+
+      if (deudaPagar > saldoActual) {
+        return res.status(400).json({
+          message: `El monto a pagar ($${deudaPagar.toFixed(2)}) excede la deuda pendiente ($${saldoActual.toFixed(2)})`,
+        });
+      }
+
+      const nuevoSaldo = Math.max(0, saldoActual - deudaPagar);
       await cliente.update({ saldo_pendiente: nuevoSaldo.toFixed(2) });
+
+      const nowPago = new Date();
+      const horaPago = nowPago.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      await ClientePago.create({
+        clienteId: cliente.id,
+        monto: deudaPagar.toFixed(2),
+        medio_pago: medio_pago || "efectivo",
+        fecha: nowPago.toISOString().split("T")[0],
+        hora: horaPago,
+        notas: `Pago de deuda incluido en venta`,
+      });
     }
 
     const now = new Date();
@@ -71,16 +175,34 @@ export const crearVenta = async (req, res) => {
       fecha: now.toISOString().split("T")[0],
       hora,
       tipo_venta: tipo_venta || "local",
-      cliente_nombre,
+      cliente_nombre: cliente.nombre,
       cliente_direccion,
       cliente_telefono,
-      medio_pago: medio_pago || "efectivo",
+      medio_pago: esPagoDividido ? "dividido" : (medio_pago || "efectivo"),
+      pago_dividido: esPagoDividido,
       subtotal: subtotalCalc.toFixed(2),
       total: subtotalCalc.toFixed(2),
-      clienteId: medio_pago === "cuenta_corriente" ? clienteId : null,
+      clienteId,
+      salidaCamionId: esReparto ? salidaCamionId : null,
       notas,
       usuarioId: req.user.id,
     });
+
+    if (esPagoDividido) {
+      for (const pago of pagos) {
+        await VentaPago.create({
+          ventaId: venta.id,
+          medio_pago: pago.medio_pago,
+          monto: parseFloat(pago.monto).toFixed(2),
+        });
+      }
+    } else {
+      await VentaPago.create({
+        ventaId: venta.id,
+        medio_pago: medio_pago || "efectivo",
+        monto: subtotalCalc.toFixed(2),
+      });
+    }
 
     for (const item of items) {
       const producto = await Producto.findByPk(item.productoId);
@@ -90,7 +212,9 @@ export const crearVenta = async (req, res) => {
         cantidad: item.cantidad,
         precio_unitario: producto.precio,
       });
-      await producto.update({ stock: producto.stock - item.cantidad });
+      if (!esReparto) {
+        await producto.update({ stock: producto.stock - item.cantidad });
+      }
     }
 
     const ventaCompleta = await Venta.findByPk(venta.id, {
@@ -99,6 +223,7 @@ export const crearVenta = async (req, res) => {
           model: VentaItem,
           include: [{ model: Producto, attributes: ["id", "nombre", "precio"] }],
         },
+        { model: VentaPago },
         { model: User, as: "vendedor", attributes: ["id", "nombre"] },
         { model: Cliente, as: "cliente", attributes: ["id", "nombre", "saldo_pendiente", "limite_credito"] },
       ],
@@ -136,6 +261,7 @@ export const getVentas = async (req, res) => {
           model: VentaItem,
           include: [{ model: Producto, attributes: ["id", "nombre", "precio"] }],
         },
+        { model: VentaPago },
         { model: User, as: "vendedor", attributes: ["id", "nombre"] },
         { model: Cliente, as: "cliente", attributes: ["id", "nombre", "saldo_pendiente"] },
       ],
@@ -156,8 +282,10 @@ export const getVentaById = async (req, res) => {
           model: VentaItem,
           include: [{ model: Producto }],
         },
+        { model: VentaPago },
         { model: User, as: "vendedor", attributes: ["id", "nombre"] },
         { model: Cliente, as: "cliente" },
+        { model: SalidaCamion, as: "salida_camion", attributes: ["id", "camion"] },
       ],
     });
 
@@ -215,28 +343,42 @@ export const deleteVenta = async (req, res) => {
     }
 
     const venta = await Venta.findByPk(req.params.id, {
-      include: [{ model: VentaItem }],
+      include: [{ model: VentaItem }, { model: VentaPago }],
     });
 
     if (!venta) {
       return res.status(404).json({ message: "Venta no encontrada" });
     }
 
-    if (venta.medio_pago === "cuenta_corriente" && venta.clienteId) {
+    if (venta.clienteId) {
       const cliente = await Cliente.findByPk(venta.clienteId);
       if (cliente) {
-        const nuevoSaldo = Math.max(0, parseFloat(cliente.saldo_pendiente) - parseFloat(venta.total));
-        await cliente.update({ saldo_pendiente: nuevoSaldo.toFixed(2) });
+        let montoCC = 0;
+        if (venta.pago_dividido && venta.VentaPagos) {
+          montoCC = venta.VentaPagos
+            .filter((p) => p.medio_pago === "cuenta_corriente")
+            .reduce((sum, p) => sum + parseFloat(p.monto), 0);
+        } else if (venta.medio_pago === "cuenta_corriente") {
+          montoCC = parseFloat(venta.total);
+        }
+
+        if (montoCC > 0) {
+          const nuevoSaldo = Math.max(0, parseFloat(cliente.saldo_pendiente) - montoCC);
+          await cliente.update({ saldo_pendiente: nuevoSaldo.toFixed(2) });
+        }
       }
     }
 
     for (const item of venta.VentaItems) {
-      const prod = await Producto.findByPk(item.productoId);
-      if (prod) {
-        await prod.update({ stock: prod.stock + item.cantidad });
+      if (!venta.salidaCamionId) {
+        const prod = await Producto.findByPk(item.productoId);
+        if (prod) {
+          await prod.update({ stock: prod.stock + item.cantidad });
+        }
       }
     }
 
+    await VentaPago.destroy({ where: { ventaId: venta.id } });
     await VentaItem.destroy({ where: { ventaId: venta.id } });
     await venta.destroy();
 

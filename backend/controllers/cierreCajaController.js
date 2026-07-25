@@ -1,4 +1,4 @@
-import { CierreCaja, SalidaCamion, SalidaCamionItem, Producto, Venta, VentaItem } from "../models/index.js";
+import { CierreCaja, SalidaCamion, SalidaCamionItem, Producto, Venta, VentaItem, Cliente, User } from "../models/index.js";
 
 const checkDayClosed = async (fecha) => {
   const cierre = await CierreCaja.findOne({ where: { fecha } });
@@ -16,19 +16,42 @@ export const getResumenDelDia = async (req, res) => {
           model: SalidaCamionItem,
           include: [{ model: Producto, attributes: ["id", "nombre", "precio"] }],
         },
+        { model: Cliente, as: "cliente", attributes: ["id", "nombre"] },
+        { model: User, as: "repartidor_asignado", attributes: ["id", "nombre"] },
       ],
     });
 
     let mercaderia_enviada = 0;
     let mercaderia_devuelta = 0;
+    const detalle_enviadas = [];
+    const detalle_devueltas = [];
 
     for (const salida of salidasHoy) {
       for (const item of salida.SalidaCamionItems || []) {
         const valor = parseFloat(item.precio_unitario) * item.cantidad;
         mercaderia_enviada += valor;
-      }
-      if (salida.monto_regreso) {
-        mercaderia_devuelta += parseFloat(salida.monto_regreso);
+        detalle_enviadas.push({
+          producto: item.Producto?.nombre || "Desconocido",
+          cantidad: item.cantidad,
+          precio_unitario: parseFloat(item.precio_unitario),
+          subtotal: valor,
+          camion: salida.camion,
+          salida_id: salida.id,
+          repartidor: salida.repartidor_asignado?.nombre || "Sin asignar",
+        });
+        if (item.cantidad_devuelta && item.cantidad_devuelta > 0) {
+          const valorDevuelto = parseFloat(item.precio_unitario) * item.cantidad_devuelta;
+          mercaderia_devuelta += valorDevuelto;
+          detalle_devueltas.push({
+            producto: item.Producto?.nombre || "Desconocido",
+            cantidad: item.cantidad_devuelta,
+            precio_unitario: parseFloat(item.precio_unitario),
+            subtotal: valorDevuelto,
+            camion: salida.camion,
+            salida_id: salida.id,
+            repartidor: salida.repartidor_asignado?.nombre || "Sin asignar",
+          });
+        }
       }
     }
 
@@ -76,6 +99,8 @@ export const getResumenDelDia = async (req, res) => {
       total_general: totalGeneral.toFixed(2),
       cerrado: !!cierreExistente,
       cierre: cierreExistente || null,
+      detalle_enviadas,
+      detalle_devueltas,
     });
   } catch (error) {
     res.status(500).json({ message: "Error al obtener resumen del dia", error: error.message });
@@ -108,9 +133,9 @@ export const cerrarCaja = async (req, res) => {
       for (const item of salida.SalidaCamionItems || []) {
         const valor = parseFloat(item.precio_unitario) * item.cantidad;
         mercaderia_enviada += valor;
-      }
-      if (salida.monto_regreso) {
-        mercaderia_devuelta += parseFloat(salida.monto_regreso);
+        if (item.cantidad_devuelta && item.cantidad_devuelta > 0) {
+          mercaderia_devuelta += parseFloat(item.precio_unitario) * item.cantidad_devuelta;
+        }
       }
     }
 
@@ -149,6 +174,13 @@ export const cerrarCaja = async (req, res) => {
       ventas_netas: ventas_netas.toFixed(2),
       usuario_cierre: req.user.nombre,
     });
+
+    const salidasEnCamino = await SalidaCamion.findAll({
+      where: { fecha: today, estado: "en_camino" },
+    });
+    for (const salida of salidasEnCamino) {
+      await salida.update({ estado: "sobrante" });
+    }
 
     res.status(201).json({ message: "Caja cerrada exitosamente", cierre });
   } catch (error) {

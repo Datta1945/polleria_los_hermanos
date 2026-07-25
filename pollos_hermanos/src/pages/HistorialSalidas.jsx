@@ -69,9 +69,7 @@ export default function HistorialSalidas() {
                   <td>{s.fecha}</td>
                   <td><strong>{s.camion}</strong></td>
                   <td>
-                    {s.cliente_nombre}
-                    <br />
-                    <small>{s.cliente_direccion || ""}</small>
+                    {s.cliente?.nombre || s.cliente_nombre}
                   </td>
                   <td>
                     {s.SalidaCamionItems?.map((item) => (

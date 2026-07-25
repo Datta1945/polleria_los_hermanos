@@ -12,6 +12,11 @@ const SalidaCamionItem = sequelize.define("SalidaCamionItem", {
     allowNull: false,
     defaultValue: 1,
   },
+  cantidad_devuelta: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0,
+  },
   precio_unitario: {
     type: DataTypes.DECIMAL(10, 2),
     allowNull: false,

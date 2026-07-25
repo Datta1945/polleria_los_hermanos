@@ -28,6 +28,7 @@ export const authAPI = {
   login: (data) => API.post("/auth/login", data),
   register: (data) => API.post("/auth/register", data),
   getProfile: () => API.get("/auth/profile"),
+  getLoginUsers: () => API.get("/auth/login-users"),
 };
 
 export const proveedoresAPI = {
@@ -66,6 +67,8 @@ export const salidasAPI = {
   update: (id, data) => API.put(`/salidas-camion/${id}`, data),
   delete: (id) => API.delete(`/salidas-camion/${id}`),
   getStats: () => API.get("/salidas-camion/stats"),
+  getCamionesActivos: () => API.get("/salidas-camion/activos"),
+  getStockCamion: (id) => API.get(`/salidas-camion/${id}/stock`),
 };
 
 export const cierreCajaAPI = {
@@ -90,6 +93,7 @@ export const usuariosAPI = {
   resetPassword: (id, data) => API.put(`/usuarios/${id}/reset-password`, data),
   delete: (id) => API.delete(`/usuarios/${id}`),
   getRoles: () => API.get("/usuarios/roles"),
+  getRepartidores: () => API.get("/usuarios/repartidores"),
 };
 
 export const clientesAPI = {
@@ -99,6 +103,7 @@ export const clientesAPI = {
   update: (id, data) => API.put(`/clientes/${id}`, data),
   delete: (id) => API.delete(`/clientes/${id}`),
   getHistorialCC: (id) => API.get(`/clientes/${id}/historial-cc`),
+  registrarPagoCC: (id, data) => API.post(`/clientes/${id}/pago-cc`, data),
 };
 
 export default API;

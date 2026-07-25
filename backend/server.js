@@ -45,6 +45,13 @@ const start = async () => {
     await sequelize.sync();
     console.log("Modelos sincronizados");
 
+    const [cols] = await sequelize.query("PRAGMA table_info(Venta)");
+    const hasSalidaCamionId = cols.some((c) => c.name === "salidaCamionId");
+    if (!hasSalidaCamionId) {
+      await sequelize.query("ALTER TABLE Venta ADD COLUMN salidaCamionId INTEGER REFERENCES SalidaCamions(id)");
+      console.log("Columna salidaCamionId agregada a Venta");
+    }
+
     app.listen(PORT, () => {
       console.log(`Servidor corriendo en puerto ${PORT}`);
       console.log(`API: http://localhost:${PORT}/api`);

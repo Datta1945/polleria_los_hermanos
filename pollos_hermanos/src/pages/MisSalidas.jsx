@@ -60,6 +60,12 @@ export default function MisSalidas() {
 
   const confirmarRegreso = async () => {
     if (!regresando) return;
+
+    const confirmado = window.confirm(
+      "REQUERIDO: Para confirmar el regreso primero debe registrar la mercaderia vendida como Venta por Reparto en la seccion de Ventas.\n\nSi no registro la venta por reparto, el regreso no podra completarse.\n\n¿Desea continuar?"
+    );
+    if (!confirmado) return;
+
     try {
       const items_para_enviar = itemsRegreso
         .filter((item) => item.cantidad_regreso > 0)
@@ -83,6 +89,7 @@ export default function MisSalidas() {
     en_camino: "#3b82f6",
     entregado: "#10b981",
     cancelado: "#ef4444",
+    sobrante: "#ef4444",
   };
 
   if (loading) return <div className="loading">Cargando...</div>;
@@ -125,7 +132,7 @@ export default function MisSalidas() {
                           className="input-cantidad"
                         />
                       </td>
-                      <td className="monto-regreso">
+                      <td style={{ color: "var(--danger)", fontWeight: "bold" }}>
                         ${(item.precio_unitario * item.cantidad_regreso).toFixed(2)}
                       </td>
                     </tr>
@@ -137,7 +144,7 @@ export default function MisSalidas() {
             <div className="resumen-card" style={{ marginTop: "1rem" }}>
               <div className="resumen-row">
                 <span>Monto de Regreso:</span>
-                <strong className="monto-regreso">${calcularMontoRegreso().toFixed(2)}</strong>
+                <strong style={{ color: "var(--danger)" }}>${calcularMontoRegreso().toFixed(2)}</strong>
               </div>
             </div>
 
@@ -177,9 +184,7 @@ export default function MisSalidas() {
                   <td>{s.fecha}</td>
                   <td><strong>{s.camion}</strong></td>
                   <td>
-                    {s.cliente_nombre}
-                    <br />
-                    <small>{s.cliente_direccion || ""}</small>
+                    {s.cliente?.nombre || s.cliente_nombre}
                   </td>
                   <td>
                     {s.SalidaCamionItems?.map((item) => (
@@ -194,9 +199,9 @@ export default function MisSalidas() {
                   <td>
                     <span
                       className="estado-badge"
-                      style={{ backgroundColor: estadoColors[s.estado] }}
+                      style={{ backgroundColor: estadoColors[s.estado === "sobrante" ? "entregado" : s.estado] }}
                     >
-                      {s.estado.replace("_", " ")}
+                      {(s.estado === "sobrante" ? "entregado" : s.estado).replace("_", " ")}
                     </span>
                   </td>
                   <td>
@@ -217,7 +222,7 @@ export default function MisSalidas() {
                           Registrar Regreso
                         </button>
                       )}
-                      {s.estado !== "entregado" && s.estado !== "cancelado" && (
+                      {s.estado !== "entregado" && s.estado !== "cancelado" && s.estado !== "sobrante" && (
                         <button
                           className="btn btn-sm btn-cancel"
                           onClick={() => updateEstado(s.id, "cancelado")}

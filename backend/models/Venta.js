@@ -43,7 +43,12 @@ const Venta = sequelize.define("Venta", {
     type: DataTypes.STRING,
     allowNull: false,
     defaultValue: "efectivo",
-    validate: { isIn: [["efectivo", "transferencia", "tarjeta", "otro"]] },
+    validate: { isIn: [["efectivo", "transferencia", "tarjeta", "otro", "cuenta_corriente", "dividido"]] },
+  },
+  pago_dividido: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+    comment: "Indica si la venta tiene multiples medios de pago",
   },
   subtotal: {
     type: DataTypes.DECIMAL(10, 2),
@@ -59,8 +64,13 @@ const Venta = sequelize.define("Venta", {
   },
   clienteId: {
     type: DataTypes.INTEGER,
+    allowNull: false,
+    comment: "Cliente registrado (siempre requerido)",
+  },
+  salidaCamionId: {
+    type: DataTypes.INTEGER,
     allowNull: true,
-    comment: "Cliente asociado (requerido para cuenta corriente)",
+    comment: "Salida de camion asociada (solo ventas por reparto)",
   },
   estado: {
     type: DataTypes.STRING,

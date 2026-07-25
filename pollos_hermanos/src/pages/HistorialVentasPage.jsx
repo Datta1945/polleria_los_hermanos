@@ -64,6 +64,7 @@ export default function HistorialVentasPage() {
     tarjeta: "Tarjeta",
     cuenta_corriente: "Cuenta Corriente",
     otro: "Otro",
+    dividido: "Dividido",
   };
 
   if (loading) return <div className="loading">Cargando...</div>;
@@ -131,11 +132,7 @@ export default function HistorialVentasPage() {
                       {v.tipo_venta === "local" ? "Local" : "Reparto"}
                     </span>
                   </td>
-                  <td>
-                    {v.cliente_nombre}
-                    <br />
-                    <small>{v.cliente_direccion || ""}</small>
-                  </td>
+                  <td>{v.cliente?.nombre || v.cliente_nombre}</td>
                   <td>
                     {v.VentaItems?.map((item) => (
                       <span key={item.id} className="badge">
@@ -143,7 +140,15 @@ export default function HistorialVentasPage() {
                       </span>
                     ))}
                   </td>
-                  <td>{medioPagoLabels[v.medio_pago] || v.medio_pago}</td>
+                  <td>
+                    {v.pago_dividido && v.VentaPagos ? (
+                      <span title={v.VentaPagos.map((p) => `${p.medio_pago}: $${parseFloat(p.monto).toFixed(2)}`).join(", ")}>
+                        Dividido
+                      </span>
+                    ) : (
+                      medioPagoLabels[v.medio_pago] || v.medio_pago
+                    )}
+                  </td>
                   <td><strong className="monto-ventas">${v.total}</strong></td>
                   <td>{v.vendedor?.nombre || "-"}</td>
                   <td>

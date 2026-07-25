@@ -1,4 +1,22 @@
 import { User, Role } from "../models/index.js";
+import { Op } from "sequelize";
+
+export const getRepartidores = async (req, res) => {
+  try {
+    const repartidorRole = await Role.findOne({ where: { nombre: "repartidor" } });
+    if (!repartidorRole) {
+      return res.json([]);
+    }
+    const repartidores = await User.findAll({
+      where: { activo: true, roleId: repartidorRole.id },
+      attributes: ["id", "nombre", "email"],
+      order: [["nombre", "ASC"]],
+    });
+    res.json(repartidores);
+  } catch (error) {
+    res.status(500).json({ message: "Error al obtener repartidores", error: error.message });
+  }
+};
 
 export const getAllUsers = async (req, res) => {
   try {
@@ -34,13 +52,8 @@ export const createUser = async (req, res) => {
   try {
     const { nombre, email, password, roleId, activo } = req.body;
 
-    if (!nombre || !email || !password || !roleId) {
-      return res.status(400).json({ message: "Nombre, email, password y rol son requeridos" });
-    }
-
-    const existing = await User.findOne({ where: { email } });
-    if (existing) {
-      return res.status(400).json({ message: "Ya existe un usuario con ese email" });
+    if (!nombre || !password || !roleId) {
+      return res.status(400).json({ message: "Nombre, password y rol son requeridos" });
     }
 
     const role = await Role.findByPk(roleId);
@@ -50,9 +63,9 @@ export const createUser = async (req, res) => {
 
     const user = await User.create({
       nombre,
-      email,
+      email: email || `${nombre.toLowerCase().replace(/\s/g, '.')}@temp.local`,
       password,
-      roleId,
+      roleId: parseInt(roleId),
       activo: activo !== undefined ? activo : true,
     });
 
@@ -86,7 +99,7 @@ export const updateUser = async (req, res) => {
     await user.update({
       nombre: nombre || user.nombre,
       email: email || user.email,
-      roleId: roleId || user.roleId,
+      roleId: roleId != null ? roleId : user.roleId,
       activo: activo !== undefined ? activo : user.activo,
     });
 

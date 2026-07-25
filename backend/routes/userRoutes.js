@@ -7,12 +7,16 @@ import {
   resetPassword,
   deleteUser,
   getRoles,
+  getRepartidores,
 } from "../controllers/userController.js";
 import { authenticate, authorize } from "../middleware/auth.js";
 
 const router = Router();
 
 router.use(authenticate);
+
+router.get("/repartidores", getRepartidores);
+
 router.use(authorize("admin"));
 
 router.get("/roles", getRoles);

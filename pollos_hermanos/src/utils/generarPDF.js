@@ -35,10 +35,33 @@ export const generarComprobantePDF = (venta) => {
   addLine("Fecha", venta.fecha);
   addLine("Hora", venta.hora);
   addLine("Tipo", venta.tipo_venta === "local" ? "Venta de Local" : "Venta por Reparto");
-  addLine("Cliente", venta.cliente_nombre);
+  addLine("Cliente", venta.cliente?.nombre || venta.cliente_nombre);
   addLine("Direccion", venta.cliente_direccion);
   addLine("Telefono", venta.cliente_telefono);
-  addLine("Medio de pago", venta.medio_pago);
+
+  if (venta.pago_dividido && venta.VentaPagos && venta.VentaPagos.length > 0) {
+    addLine("Medio de pago", "Pago Dividido");
+    y += 2;
+    doc.setFontSize(9);
+    for (const pago of venta.VentaPagos) {
+      doc.setFont(undefined, "normal");
+      doc.text(`  - ${pago.medio_pago}:`, 15, y);
+      doc.text(`$${parseFloat(pago.monto).toFixed(2)}`, 70, y);
+      y += 6;
+    }
+    y += 2;
+  } else {
+    const medioPago = venta.medio_pago;
+    const medioLabel = {
+      efectivo: "Efectivo",
+      transferencia: "Transferencia",
+      tarjeta: "Tarjeta",
+      cuenta_corriente: "Cuenta Corriente",
+      otro: "Otro",
+    };
+    addLine("Medio de pago", medioLabel[medioPago] || medioPago);
+  }
+
   addLine("Vendedor", venta.vendedor?.nombre || "-");
 
   y += 5;

@@ -10,7 +10,6 @@ export default function UsuariosPage() {
   const [resetPass, setResetPass] = useState(null);
   const [form, setForm] = useState({
     nombre: "",
-    email: "",
     password: "",
     roleId: "",
     activo: true,
@@ -38,7 +37,7 @@ export default function UsuariosPage() {
 
   const openCreate = () => {
     setEditando(null);
-    setForm({ nombre: "", email: "", password: "", roleId: "", activo: true });
+    setForm({ nombre: "", password: "", roleId: "", activo: true });
     setShowForm(true);
   };
 
@@ -46,7 +45,6 @@ export default function UsuariosPage() {
     setEditando(u);
     setForm({
       nombre: u.nombre,
-      email: u.email,
       password: "",
       roleId: u.Role?.id || "",
       activo: u.activo,
@@ -60,7 +58,6 @@ export default function UsuariosPage() {
       if (editando) {
         const data = {
           nombre: form.nombre,
-          email: form.email,
           roleId: parseInt(form.roleId),
           activo: form.activo,
         };
@@ -125,15 +122,6 @@ export default function UsuariosPage() {
                 <input
                   value={form.nombre}
                   onChange={(e) => setForm({ ...form, nombre: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label>Email *</label>
-                <input
-                  type="email"
-                  value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
                   required
                 />
               </div>
@@ -235,7 +223,7 @@ export default function UsuariosPage() {
                       Editar
                     </button>
                     <button className="btn btn-sm btn-secondary" onClick={() => setResetPass(u)}>
-                      Pass
+                      Cambio de contraseña
                     </button>
                     <button
                       className="btn btn-sm"

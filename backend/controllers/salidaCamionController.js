@@ -1,28 +1,28 @@
-import { SalidaCamion, SalidaCamionItem, Producto, User, CierreCaja } from "../models/index.js";
+import { SalidaCamion, SalidaCamionItem, Producto, User, Cliente, CierreCaja, Venta, VentaItem } from "../models/index.js";
+import { Op } from "sequelize";
 
 const checkDayClosed = async (fecha) => {
   const cierre = await CierreCaja.findOne({ where: { fecha } });
   return !!cierre;
 };
 
+const includeSalida = [
+  {
+    model: SalidaCamionItem,
+    include: [{ model: Producto, attributes: ["id", "nombre", "precio", "unidad"] }],
+  },
+  { model: Cliente, as: "cliente", attributes: ["id", "nombre"] },
+  { model: User, as: "repartidor_asignado", attributes: ["id", "nombre"] },
+  { model: User, as: "creado_por", attributes: ["id", "nombre"] },
+];
+
 export const getAllSalidas = async (req, res) => {
   try {
     const where = {};
 
-    if (req.userRole === "repartidor") {
-      where.asignadoRepartidorId = req.user.id;
-    }
-
     const salidas = await SalidaCamion.findAll({
       where,
-      include: [
-        {
-          model: SalidaCamionItem,
-          include: [{ model: Producto, attributes: ["id", "nombre", "precio", "unidad"] }],
-        },
-        { model: User, as: "repartidor_asignado", attributes: ["id", "nombre"] },
-        { model: User, as: "creado_por", attributes: ["id", "nombre"] },
-      ],
+      include: includeSalida,
       order: [["fecha", "DESC"], ["createdAt", "DESC"]],
     });
 
@@ -40,6 +40,7 @@ export const getSalidaById = async (req, res) => {
           model: SalidaCamionItem,
           include: [{ model: Producto }],
         },
+        { model: Cliente, as: "cliente", attributes: ["id", "nombre"] },
         { model: User, as: "repartidor_asignado", attributes: ["id", "nombre"] },
         { model: User, as: "creado_por", attributes: ["id", "nombre"] },
       ],
@@ -58,12 +59,18 @@ export const getSalidaById = async (req, res) => {
 export const getMisSalidas = async (req, res) => {
   try {
     const salidas = await SalidaCamion.findAll({
-      where: { asignadoRepartidorId: req.user.id },
+      where: {
+        [Op.or]: [
+          { asignadoRepartidorId: req.user.id },
+          { creadoPorId: req.user.id },
+        ],
+      },
       include: [
         {
           model: SalidaCamionItem,
           include: [{ model: Producto, attributes: ["id", "nombre", "precio", "unidad"] }],
         },
+        { model: Cliente, as: "cliente", attributes: ["id", "nombre"] },
         { model: User, as: "repartidor_asignado", attributes: ["id", "nombre"] },
       ],
       order: [["fecha", "DESC"], ["createdAt", "DESC"]],
@@ -81,9 +88,7 @@ export const createSalida = async (req, res) => {
       fecha,
       camion,
       destino,
-      cliente_nombre,
-      cliente_direccion,
-      cliente_telefono,
+      clienteId,
       notas,
       asignadoRepartidorId,
       items,
@@ -91,6 +96,17 @@ export const createSalida = async (req, res) => {
 
     if (!items || items.length === 0) {
       return res.status(400).json({ message: "Debe agregar al menos un producto" });
+    }
+
+    let clienteNombre = null;
+    let clienteIdVal = null;
+    if (clienteId) {
+      const cliente = await Cliente.findByPk(clienteId);
+      if (!cliente) {
+        return res.status(400).json({ message: "Cliente no encontrado" });
+      }
+      clienteNombre = cliente.nombre;
+      clienteIdVal = cliente.id;
     }
 
     const salidaFecha = fecha || new Date().toISOString().split("T")[0];
@@ -119,9 +135,8 @@ export const createSalida = async (req, res) => {
       fecha: salidaFecha,
       camion,
       destino,
-      cliente_nombre,
-      cliente_direccion,
-      cliente_telefono,
+      cliente_nombre: clienteNombre || "",
+      clienteId: clienteIdVal,
       notas,
       precio_total: precioTotal,
       monto_salida: montoSalidaCalc,
@@ -142,14 +157,7 @@ export const createSalida = async (req, res) => {
     }
 
     const salidaCompleta = await SalidaCamion.findByPk(salida.id, {
-      include: [
-        {
-          model: SalidaCamionItem,
-          include: [{ model: Producto }],
-        },
-        { model: User, as: "repartidor_asignado", attributes: ["id", "nombre"] },
-        { model: User, as: "creado_por", attributes: ["id", "nombre"] },
-      ],
+      include: includeSalida,
     });
 
     res.status(201).json({ message: "Salida de camión creada", salida: salidaCompleta });
@@ -168,12 +176,25 @@ export const registrarRegreso = async (req, res) => {
       return res.status(404).json({ message: "Salida no encontrada" });
     }
 
+    if (req.userRole === "repartidor") {
+      if (salida.asignadoRepartidorId !== req.user.id && salida.creadoPorId !== req.user.id) {
+        return res.status(403).json({ message: "No tienes permiso para modificar esta salida" });
+      }
+    }
+
     if (salida.estado !== "en_camino") {
       return res.status(400).json({ message: "Solo se puede registrar regreso de salidas en camino" });
     }
 
     if (await checkDayClosed(salida.fecha)) {
       return res.status(400).json({ message: "No se puede modificar, la caja del día ya fue cerrada" });
+    }
+
+    const ventasExistentes = await Venta.findAll({
+      where: { salidaCamionId: salida.id, estado: "completada" },
+    });
+    if (ventasExistentes.length === 0) {
+      return res.status(400).json({ message: "Debe registrar la mercaderia como Venta por Reparto antes de confirmar el regreso" });
     }
 
     const { items_regreso } = req.body;
@@ -184,24 +205,28 @@ export const registrarRegreso = async (req, res) => {
         const producto = await Producto.findByPk(item.productoId);
         if (producto) {
           montoRegreso += producto.precio * item.cantidad;
+          const salidaItem = salida.SalidaCamionItems.find((si) => si.productoId === item.productoId);
+          if (salidaItem) {
+            await salidaItem.update({ cantidad_devuelta: item.cantidad });
+          }
         }
       }
     }
 
     await salida.update({
-      estado: "entregado",
       monto_regreso: montoRegreso,
     });
 
+    const totalVentasReparto = ventasExistentes.reduce((sum, v) => sum + parseFloat(v.total || 0), 0);
+    const montoSalida = parseFloat(salida.monto_salida || 0);
+    const estadoFinal = montoRegreso + totalVentasReparto >= montoSalida ? "entregado" : "sobrante";
+
+    await salida.update({
+      estado: estadoFinal,
+    });
+
     const salidaActualizada = await SalidaCamion.findByPk(salida.id, {
-      include: [
-        {
-          model: SalidaCamionItem,
-          include: [{ model: Producto }],
-        },
-        { model: User, as: "repartidor_asignado", attributes: ["id", "nombre"] },
-        { model: User, as: "creado_por", attributes: ["id", "nombre"] },
-      ],
+      include: includeSalida,
     });
 
     res.json({ message: "Regreso registrado", salida: salidaActualizada });
@@ -217,8 +242,10 @@ export const updateSalidaStatus = async (req, res) => {
       return res.status(404).json({ message: "Salida no encontrada" });
     }
 
-    if (req.userRole === "repartidor" && salida.asignadoRepartidorId !== req.user.id) {
-      return res.status(403).json({ message: "No tienes permiso para modificar esta salida" });
+    if (req.userRole === "repartidor") {
+      if (salida.asignadoRepartidorId !== req.user.id && salida.creadoPorId !== req.user.id) {
+        return res.status(403).json({ message: "No tienes permiso para modificar esta salida" });
+      }
     }
 
     if (await checkDayClosed(salida.fecha)) {
@@ -227,7 +254,7 @@ export const updateSalidaStatus = async (req, res) => {
 
     const { estado, notas } = req.body;
 
-    if (estado && !["pendiente", "en_camino", "entregado", "cancelado"].includes(estado)) {
+    if (estado && !["pendiente", "en_camino", "entregado", "cancelado", "sobrante"].includes(estado)) {
       return res.status(400).json({ message: "Estado no valido" });
     }
 
@@ -249,14 +276,7 @@ export const updateSalidaStatus = async (req, res) => {
     await salida.update(updateData);
 
     const salidaActualizada = await SalidaCamion.findByPk(salida.id, {
-      include: [
-        {
-          model: SalidaCamionItem,
-          include: [{ model: Producto }],
-        },
-        { model: User, as: "repartidor_asignado", attributes: ["id", "nombre"] },
-        { model: User, as: "creado_por", attributes: ["id", "nombre"] },
-      ],
+      include: includeSalida,
     });
 
     res.json({ message: "Estado actualizado", salida: salidaActualizada });
@@ -283,10 +303,21 @@ export const updateSalidaCompleta = async (req, res) => {
       return res.status(400).json({ message: "No se puede modificar, la caja del día ya fue cerrada" });
     }
 
-    const { camion, destino, cliente_nombre, cliente_direccion, cliente_telefono, notas, asignadoRepartidorId, items } = req.body;
+    const { camion, destino, clienteId, notas, asignadoRepartidorId, items } = req.body;
 
     if (salida.estado !== "pendiente") {
       return res.status(400).json({ message: "Solo se puede editar una salida en estado pendiente" });
+    }
+
+    let clienteNombreUpd = null;
+    let clienteIdUpd = null;
+    if (clienteId) {
+      const cliente = await Cliente.findByPk(clienteId);
+      if (!cliente) {
+        return res.status(400).json({ message: "Cliente no encontrado" });
+      }
+      clienteNombreUpd = cliente.nombre;
+      clienteIdUpd = cliente.id;
     }
 
     for (const oldItem of salida.SalidaCamionItems) {
@@ -324,9 +355,8 @@ export const updateSalidaCompleta = async (req, res) => {
     await salida.update({
       camion,
       destino,
-      cliente_nombre,
-      cliente_direccion,
-      cliente_telefono,
+      cliente_nombre: clienteNombreUpd || "",
+      clienteId: clienteIdUpd,
       notas,
       precio_total: precioTotal,
       monto_salida: precioTotal,
@@ -334,14 +364,7 @@ export const updateSalidaCompleta = async (req, res) => {
     });
 
     const salidaActualizada = await SalidaCamion.findByPk(salida.id, {
-      include: [
-        {
-          model: SalidaCamionItem,
-          include: [{ model: Producto }],
-        },
-        { model: User, as: "repartidor_asignado", attributes: ["id", "nombre"] },
-        { model: User, as: "creado_por", attributes: ["id", "nombre"] },
-      ],
+      include: includeSalida,
     });
 
     res.json({ message: "Salida actualizada", salida: salidaActualizada });
@@ -421,5 +444,84 @@ export const getSalidasStats = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: "Error al obtener estadísticas", error: error.message });
+  }
+};
+
+export const getCamionesActivos = async (req, res) => {
+  try {
+    const where = { estado: { [Op.in]: ["en_camino", "entregado", "sobrante"] } };
+    if (req.userRole === "repartidor") {
+      where.asignadoRepartidorId = req.user.id;
+      where.estado = "en_camino";
+    }
+    const salidas = await SalidaCamion.findAll({
+      where,
+      include: [
+        {
+          model: SalidaCamionItem,
+          include: [{ model: Producto, attributes: ["id", "nombre", "precio"] }],
+        },
+        { model: User, as: "repartidor_asignado", attributes: ["id", "nombre"] },
+      ],
+      order: [["fecha", "DESC"]],
+    });
+    res.json(salidas);
+  } catch (error) {
+    res.status(500).json({ message: "Error al obtener camiones activos", error: error.message });
+  }
+};
+
+export const getStockCamion = async (req, res) => {
+  try {
+    const salida = await SalidaCamion.findByPk(req.params.id, {
+      include: [
+        {
+          model: SalidaCamionItem,
+          include: [{ model: Producto, attributes: ["id", "nombre", "precio"] }],
+        },
+      ],
+    });
+
+    if (!salida) {
+      return res.status(404).json({ message: "Salida no encontrada" });
+    }
+
+    const ventasDelCamion = await Venta.findAll({
+      where: { salidaCamionId: salida.id, estado: "completada" },
+      include: [{ model: VentaItem, attributes: ["productoId", "cantidad"] }],
+    });
+
+    const stockDisponible = {};
+    for (const item of salida.SalidaCamionItems) {
+      const productoId = item.productoId;
+      if (!stockDisponible[productoId]) {
+        stockDisponible[productoId] = {
+          productoId,
+          nombre: item.Producto?.nombre,
+          precio: parseFloat(item.precio_unitario),
+          cargado: item.cantidad,
+          vendido: 0,
+          devuelto: item.cantidad_devuelta || 0,
+          disponible: item.cantidad - (item.cantidad_devuelta || 0),
+        };
+      }
+    }
+
+    for (const venta of ventasDelCamion) {
+      for (const vi of venta.VentaItems) {
+        if (stockDisponible[vi.productoId]) {
+          stockDisponible[vi.productoId].vendido += vi.cantidad;
+          stockDisponible[vi.productoId].disponible -= vi.cantidad;
+        }
+      }
+    }
+
+    res.json({
+      salidaId: salida.id,
+      camion: salida.camion,
+      items: Object.values(stockDisponible),
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Error al obtener stock del camion", error: error.message });
   }
 };

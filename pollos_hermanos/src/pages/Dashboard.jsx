@@ -8,6 +8,7 @@ export default function Dashboard() {
   const [stockBajo, setStockBajo] = useState([]);
   const [loading, setLoading] = useState(true);
   const [cerrando, setCerrando] = useState(false);
+  const [camionActivo, setCamionActivo] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -56,6 +57,26 @@ export default function Dashboard() {
     }
   };
 
+  const agruparPorCamion = (items) => {
+    const grupos = {};
+    (items || []).forEach((item) => {
+      const camion = item.camion || "Sin camion";
+      if (!grupos[camion]) grupos[camion] = [];
+      grupos[camion].push(item);
+    });
+    return grupos;
+  };
+
+  const agruparPorSalida = (items) => {
+    const grupos = {};
+    (items || []).forEach((item) => {
+      const id = item.salida_id || "desconocido";
+      if (!grupos[id]) grupos[id] = { repartidor: item.repartidor, items: [] };
+      grupos[id].items.push(item);
+    });
+    return grupos;
+  };
+
   if (loading) return <div className="loading">Cargando...</div>;
 
   const estadoColors = {
@@ -63,6 +84,7 @@ export default function Dashboard() {
     en_camino: "#3b82f6",
     entregado: "#10b981",
     cancelado: "#ef4444",
+    sobrante: "#ef4444",
   };
 
   return (
@@ -125,55 +147,159 @@ export default function Dashboard() {
       {resumen && (
         <div className="section">
           <h3>Cierre de Caja del Dia</h3>
-          {resumen.cerrado ? (
-            <div className="form-card cierre-cerrado">
-              <div className="cierre-cerrado-header">
-                <span className="cierre-cerrado-badge">CERRADO</span>
-              </div>
-              <div className="cierre-grid">
-                <div className="cierre-block">
-                  <h4>Ventas por Reparto</h4>
-                  <div className="cierre-item"><span>Ventas:</span><strong>{resumen.reparto_count}</strong></div>
-                  <div className="cierre-item"><span>Total:</span><strong className="monto-ventas">${resumen.reparto_monto}</strong></div>
+          {resumen.cerrado && (
+            <div className="cierre-cerrado-header" style={{ marginBottom: "0.5rem" }}>
+              <span className="cierre-cerrado-badge">CERRADO</span>
+            </div>
+          )}
+
+          <div className="form-card">
+            <div className="cierre-2col">
+              <div className="cierre-col">
+                <div className="cierre-item"><span>Salidas:</span><strong>{resumen.salidas_count}</strong></div>
+                <div className="cierre-item">
+                  <span>Mercaderia Enviada:</span>
+                  <strong className="monto-salida">${resumen.mercaderia_enviada}</strong>
                 </div>
+
+                {(() => {
+                  const gruposEnviadas = agruparPorCamion(resumen.detalle_enviadas);
+                  const gruposDevueltas = agruparPorCamion(resumen.detalle_devueltas);
+                  const todosLosCamiones = [...new Set([
+                    ...Object.keys(gruposEnviadas),
+                    ...Object.keys(gruposDevueltas),
+                  ])];
+                  if (todosLosCamiones.length === 0) return null;
+                  return (
+                    <div className="cierre-camiones-lista">
+                      <div className="cierre-separator"></div>
+                      <h4 style={{ color: "var(--primary)", marginBottom: "0.5rem" }}>Salidas por Camion</h4>
+                      {todosLosCamiones.map((camion) => (
+                        <div key={camion} className="camion-item-row">
+                          <span className="camion-item-nombre">{camion}</span>
+                          <button
+                            className={`btn btn-sm ${camionActivo === camion ? "btn-cancel" : "btn-secondary"}`}
+                            onClick={() => setCamionActivo(camionActivo === camion ? null : camion)}
+                          >
+                            {camionActivo === camion ? "Cerrar" : "Detalle"}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+
+                {camionActivo && (
+                  <div className="cierre-detalle-expandido">
+                    <div className="camion-seccion-2col">
+                      <div className="camion-detalle-col">
+                        <div className="camion-detalle-label monto-salida">Mercaderia Enviada</div>
+                        {(() => {
+                          const grupos = agruparPorSalida(agruparPorCamion(resumen.detalle_enviadas)[camionActivo]);
+                          const claves = Object.keys(grupos);
+                          if (claves.length === 0) return <p className="empty-mini">Sin mercaderia enviada</p>;
+                          return (
+                            <div className="detalle-scroll-container">
+                              {claves.map((salidaId) => (
+                                <div key={salidaId} className="camion-operacion-grupo">
+                                  <div className="camion-operacion-header">Operacion #{salidaId} &mdash; {grupos[salidaId].repartidor}</div>
+                                  <table>
+                                    <thead>
+                                      <tr>
+                                        <th>Producto</th>
+                                        <th>Cant.</th>
+                                        <th>P. Unit.</th>
+                                        <th>Subtotal</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {grupos[salidaId].items.map((item, i) => (
+                                        <tr key={i}>
+                                          <td>{item.producto}</td>
+                                          <td>{item.cantidad}</td>
+                                          <td>${item.precio_unitario.toFixed(2)}</td>
+                                          <td><strong className="monto-salida">${item.subtotal.toFixed(2)}</strong></td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                      <div className="camion-detalle-col">
+                        <div className="camion-detalle-label monto-regreso">Mercaderia Devuelta</div>
+                        {(() => {
+                          const grupos = agruparPorSalida(agruparPorCamion(resumen.detalle_devueltas)[camionActivo]);
+                          const claves = Object.keys(grupos);
+                          if (claves.length === 0) return <p className="empty-mini">Sin mercaderia devuelta</p>;
+                          return (
+                            <div className="detalle-scroll-container">
+                              {claves.map((salidaId) => (
+                                <div key={salidaId} className="camion-operacion-grupo">
+                                  <div className="camion-operacion-header">Operacion #{salidaId} &mdash; {grupos[salidaId].repartidor}</div>
+                                  <table>
+                                    <thead>
+                                      <tr>
+                                        <th>Producto</th>
+                                        <th>Cant.</th>
+                                        <th>P. Unit.</th>
+                                        <th>Subtotal</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {grupos[salidaId].items.map((item, i) => (
+                                        <tr key={i}>
+                                          <td>{item.producto}</td>
+                                          <td>{item.cantidad}</td>
+                                          <td>${item.precio_unitario.toFixed(2)}</td>
+                                          <td><strong className="monto-regreso">${item.subtotal.toFixed(2)}</strong></td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="cierre-col">
                 <div className="cierre-block">
                   <h4>Ventas de Local</h4>
                   <div className="cierre-item"><span>Ventas:</span><strong>{resumen.local_count}</strong></div>
                   <div className="cierre-item"><span>Total:</span><strong className="monto-ventas">${resumen.local_monto}</strong></div>
                 </div>
-              </div>
-              <div className="cierre-separator"></div>
-              <div className="cierre-grid">
-                <div className="cierre-item"><span>Fecha:</span><strong>{resumen.fecha}</strong></div>
-                <div className="cierre-item"><span>Hora cierre:</span><strong>{resumen.cierre?.hora || "-"}</strong></div>
-                <div className="cierre-item"><span>Realizado por:</span><strong>{resumen.cierre?.usuario_cierre || "-"}</strong></div>
-                <div className="cierre-item"><span>Salidas:</span><strong>{resumen.salidas_count}</strong></div>
-                <div className="cierre-item"><span>Mercaderia Enviada:</span><strong className="monto-salida">${resumen.mercaderia_enviada}</strong></div>
-                <div className="cierre-item"><span>Mercaderia Devuelta:</span><strong className="monto-regreso">${resumen.mercaderia_devuelta}</strong></div>
+                <div className="cierre-block">
+                  <h4>Ventas por Reparto</h4>
+                  <div className="cierre-item"><span>Ventas:</span><strong>{resumen.reparto_count}</strong></div>
+                  <div className="cierre-item"><span>Total:</span><strong className="monto-ventas">${resumen.reparto_monto}</strong></div>
+                </div>
+                <div className="cierre-separator"></div>
                 <div className="cierre-item cierre-total"><span>Total General:</span><strong>${resumen.total_general}</strong></div>
+                {resumen.cerrado && (
+                  <>
+                    <div className="cierre-item"><span>Fecha:</span><strong>{resumen.fecha}</strong></div>
+                    <div className="cierre-item"><span>Hora cierre:</span><strong>{resumen.cierre?.hora || "-"}</strong></div>
+                    <div className="cierre-item"><span>Realizado por:</span><strong>{resumen.cierre?.usuario_cierre || "-"}</strong></div>
+                  </>
+                )}
               </div>
             </div>
-          ) : (
-            <div className="form-card">
-              <div className="cierre-grid">
-                <div className="cierre-block">
-                  <h4>Ventas por Reparto</h4>
-                  <div className="cierre-item"><span>Ventas:</span><strong>{resumen.reparto_count}</strong></div>
-                  <div className="cierre-item"><span>Total:</span><strong className="monto-ventas">${resumen.reparto_monto}</strong></div>
-                </div>
-                <div className="cierre-block">
-                  <h4>Ventas de Local</h4>
-                  <div className="cierre-item"><span>Ventas:</span><strong>{resumen.local_count}</strong></div>
-                  <div className="cierre-item"><span>Total:</span><strong className="monto-ventas">${resumen.local_monto}</strong></div>
-                </div>
-              </div>
-              <div className="cierre-separator"></div>
-              <div className="cierre-grid">
-                <div className="cierre-item"><span>Salidas:</span><strong>{resumen.salidas_count}</strong></div>
-                <div className="cierre-item"><span>Mercaderia Enviada:</span><strong className="monto-salida">${resumen.mercaderia_enviada}</strong></div>
-                <div className="cierre-item"><span>Mercaderia Devuelta:</span><strong className="monto-regreso">${resumen.mercaderia_devuelta}</strong></div>
-                <div className="cierre-item cierre-total"><span>Total General:</span><strong>${resumen.total_general}</strong></div>
-              </div>
+
+            <div className="cierre-separator"></div>
+            <div className="cierre-item">
+              <span>Mercaderia Devuelta:</span>
+              <strong className="monto-regreso">${resumen.mercaderia_devuelta}</strong>
+            </div>
+
+            {!resumen.cerrado && (
               <button
                 className="btn btn-primary btn-full btn-cerrar-caja"
                 onClick={handleCerrarCaja}
@@ -181,8 +307,8 @@ export default function Dashboard() {
               >
                 {cerrando ? "Cerrando..." : "Cerrar Caja del Dia"}
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
 
@@ -196,7 +322,6 @@ export default function Dashboard() {
               <thead>
                 <tr>
                   <th>Camion</th>
-                  <th>Cliente</th>
                   <th>Mercaderia</th>
                   <th>Total</th>
                   <th>Monto Salida</th>
@@ -210,11 +335,6 @@ export default function Dashboard() {
                 {salidas.map((s) => (
                   <tr key={s.id}>
                     <td><strong>{s.camion}</strong></td>
-                    <td>
-                      {s.cliente_nombre}
-                      <br />
-                      <small>{s.cliente_direccion || ""}</small>
-                    </td>
                     <td>
                       {s.SalidaCamionItems?.map((item) => (
                         <span key={item.id} className="badge">

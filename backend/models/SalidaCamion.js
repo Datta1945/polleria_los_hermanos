@@ -23,7 +23,7 @@ const SalidaCamion = sequelize.define("SalidaCamion", {
   },
   cliente_nombre: {
     type: DataTypes.STRING,
-    allowNull: false,
+    allowNull: true,
   },
   cliente_direccion: {
     type: DataTypes.STRING,
@@ -42,7 +42,7 @@ const SalidaCamion = sequelize.define("SalidaCamion", {
     type: DataTypes.STRING,
     defaultValue: "pendiente",
     validate: {
-      isIn: [["pendiente", "en_camino", "entregado", "cancelado"]],
+      isIn: [["pendiente", "en_camino", "entregado", "cancelado", "sobrante"]],
     },
   },
   monto_salida: {
@@ -60,6 +60,11 @@ const SalidaCamion = sequelize.define("SalidaCamion", {
   notas: {
     type: DataTypes.TEXT,
     allowNull: true,
+  },
+  clienteId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    comment: "Cliente registrado (opcional)",
   },
 });
 

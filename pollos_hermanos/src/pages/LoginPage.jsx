@@ -3,7 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
+  const [nombre, setNombre] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const { login } = useAuth();
@@ -13,7 +13,7 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
     try {
-      await login(email, password);
+      await login(nombre, password);
       navigate("/");
     } catch (err) {
       setError(err.response?.data?.message || "Error al iniciar sesión");
@@ -30,12 +30,12 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit}>
           {error && <div className="error-msg">{error}</div>}
           <div className="form-group">
-            <label>Email</label>
+            <label>Usuario</label>
             <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="admin@lospollos.com"
+              type="text"
+              value={nombre}
+              onChange={(e) => setNombre(e.target.value)}
+              placeholder="Nombre de usuario"
               required
             />
           </div>

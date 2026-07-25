@@ -1,4 +1,4 @@
-import { Cliente, Venta, VentaItem, Producto } from "../models/index.js";
+import { Cliente, Venta, VentaItem, VentaPago, ClientePago, Producto } from "../models/index.js";
 
 export const getAllClientes = async (req, res) => {
   try {
@@ -67,7 +67,6 @@ export const getHistorialCuentaCorriente = async (req, res) => {
     const ventas = await Venta.findAll({
       where: {
         clienteId: cliente.id,
-        medio_pago: "cuenta_corriente",
         estado: "completada",
       },
       include: [
@@ -75,19 +74,80 @@ export const getHistorialCuentaCorriente = async (req, res) => {
           model: VentaItem,
           include: [{ model: Producto, attributes: ["id", "nombre"] }],
         },
+        { model: VentaPago },
       ],
+      order: [["createdAt", "DESC"]],
+    });
+
+    const pagosCC = await ClientePago.findAll({
+      where: { clienteId: cliente.id },
       order: [["createdAt", "DESC"]],
     });
 
     res.json({
       cliente,
       ventas,
+      pagos: pagosCC,
       saldo_pendiente: parseFloat(cliente.saldo_pendiente),
       limite_credito: parseFloat(cliente.limite_credito),
       credito_disponible: parseFloat(cliente.limite_credito) - parseFloat(cliente.saldo_pendiente),
     });
   } catch (error) {
     res.status(500).json({ message: "Error al obtener historial", error: error.message });
+  }
+};
+
+export const registrarPagoCuentaCorriente = async (req, res) => {
+  try {
+    const { pagos } = req.body;
+
+    if (!pagos || pagos.length === 0) {
+      return res.status(400).json({ message: "Debe registrar al menos un pago" });
+    }
+
+    const cliente = await Cliente.findByPk(req.params.id);
+    if (!cliente) {
+      return res.status(404).json({ message: "Cliente no encontrado" });
+    }
+
+    const totalPago = pagos.reduce((sum, p) => sum + parseFloat(p.monto), 0);
+
+    if (totalPago <= 0) {
+      return res.status(400).json({ message: "El total del pago debe ser mayor a 0" });
+    }
+
+    if (totalPago > parseFloat(cliente.saldo_pendiente)) {
+      return res.status(400).json({
+        message: `El pago ($${totalPago.toFixed(2)}) excede la deuda ($${parseFloat(cliente.saldo_pendiente).toFixed(2)})`,
+      });
+    }
+
+    const nuevoSaldo = Math.max(0, parseFloat(cliente.saldo_pendiente) - totalPago);
+    await cliente.update({ saldo_pendiente: nuevoSaldo.toFixed(2) });
+
+    const now = new Date();
+    const hora = now.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const fecha = now.toISOString().split("T")[0];
+
+    for (const pago of pagos) {
+      await ClientePago.create({
+        clienteId: cliente.id,
+        monto: parseFloat(pago.monto).toFixed(2),
+        medio_pago: pago.medio_pago,
+        fecha,
+        hora,
+        notas: pago.notas || null,
+      });
+    }
+
+    const clienteActualizado = await Cliente.findByPk(cliente.id);
+
+    res.json({
+      message: `Pago de $${totalPago.toFixed(2)} registrado. Saldo pendiente: $${nuevoSaldo.toFixed(2)}`,
+      cliente: clienteActualizado,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Error al registrar pago", error: error.message });
   }
 };
 

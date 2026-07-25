@@ -52,10 +52,10 @@ export const register = async (req, res) => {
 
 export const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { nombre, password } = req.body;
 
     const user = await User.findOne({
-      where: { email },
+      where: { nombre },
       include: [{ model: Role, attributes: ["nombre"] }],
     });
 
@@ -98,6 +98,19 @@ export const getProfile = async (req, res) => {
     res.json(user);
   } catch (error) {
     res.status(500).json({ message: "Error al obtener perfil", error: error.message });
+  }
+};
+
+export const getLoginUsers = async (req, res) => {
+  try {
+    const users = await User.findAll({
+      where: { activo: true },
+      include: [{ model: Role, attributes: ["nombre"] }],
+      attributes: ["id", "nombre", "email"],
+    });
+    res.json(users);
+  } catch (error) {
+    res.status(500).json({ message: "Error al obtener usuarios", error: error.message });
   }
 };
 
