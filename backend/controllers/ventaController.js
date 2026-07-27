@@ -110,9 +110,11 @@ export const crearVenta = async (req, res) => {
 
     if (esPagoDividido) {
       const sumaPagos = pagos.reduce((sum, p) => sum + parseFloat(p.monto), 0);
-      if (Math.abs(sumaPagos - subtotalCalc) > 0.01) {
+      const montoDeudaPagar = pagar_deuda && monto_deuda ? parseFloat(monto_deuda) : 0;
+      const totalEsperado = subtotalCalc + montoDeudaPagar;
+      if (Math.abs(sumaPagos - totalEsperado) > 0.01) {
         return res.status(400).json({
-          message: `La suma de los pagos ($${sumaPagos.toFixed(2)}) no coincide con el total ($${subtotalCalc.toFixed(2)})`,
+          message: `La suma de los pagos ($${sumaPagos.toFixed(2)}) no coincide con el total ($${totalEsperado.toFixed(2)})`,
         });
       }
 

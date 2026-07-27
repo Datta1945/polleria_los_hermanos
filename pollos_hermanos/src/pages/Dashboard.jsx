@@ -323,9 +323,9 @@ export default function Dashboard() {
                 <tr>
                   <th>Camion</th>
                   <th>Mercaderia</th>
-                  <th>Total</th>
                   <th>Monto Salida</th>
                   <th>Monto Regreso</th>
+                  <th>Total</th>
                   <th>Repartidor</th>
                   <th>Estado</th>
                   <th>Acciones</th>
@@ -342,9 +342,9 @@ export default function Dashboard() {
                         </span>
                       ))}
                     </td>
-                    <td><strong>${s.precio_total}</strong></td>
                     <td>{s.monto_salida ? <strong className="monto-salida">${s.monto_salida}</strong> : "-"}</td>
                     <td>{s.monto_regreso ? <strong className="monto-regreso">${s.monto_regreso}</strong> : "-"}</td>
+                    <td><strong>${(parseFloat(s.monto_salida || 0) - parseFloat(s.monto_regreso || 0)).toFixed(2)}</strong></td>
                     <td>{s.repartidor_asignado?.nombre || "-"}</td>
                     <td>
                       <span

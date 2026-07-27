@@ -192,9 +192,17 @@ export const registrarRegreso = async (req, res) => {
 
     const ventasExistentes = await Venta.findAll({
       where: { salidaCamionId: salida.id, estado: "completada" },
+      include: [{ model: VentaItem, attributes: ["productoId", "cantidad"] }],
     });
     if (ventasExistentes.length === 0) {
       return res.status(400).json({ message: "Debe registrar la mercaderia como Venta por Reparto antes de confirmar el regreso" });
+    }
+
+    const vendidoPorProducto = {};
+    for (const venta of ventasExistentes) {
+      for (const vi of venta.VentaItems) {
+        vendidoPorProducto[vi.productoId] = (vendidoPorProducto[vi.productoId] || 0) + vi.cantidad;
+      }
     }
 
     const { items_regreso } = req.body;
@@ -204,9 +212,15 @@ export const registrarRegreso = async (req, res) => {
       for (const item of items_regreso) {
         const producto = await Producto.findByPk(item.productoId);
         if (producto) {
-          montoRegreso += producto.precio * item.cantidad;
           const salidaItem = salida.SalidaCamionItems.find((si) => si.productoId === item.productoId);
           if (salidaItem) {
+            const maxDevolver = salidaItem.cantidad - (vendidoPorProducto[item.productoId] || 0);
+            if (item.cantidad > maxDevolver) {
+              return res.status(400).json({
+                message: `No se puede devolver ${item.cantidad} unidades de "${producto.nombre}": solo quedan ${maxDevolver} disponibles (${salidaItem.cantidad} cargados - ${vendidoPorProducto[item.productoId] || 0} vendidos)`,
+              });
+            }
+            montoRegreso += producto.precio * item.cantidad;
             await salidaItem.update({ cantidad_devuelta: item.cantidad });
           }
         }

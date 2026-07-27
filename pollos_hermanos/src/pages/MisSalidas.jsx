@@ -8,6 +8,7 @@ export default function MisSalidas() {
   const [loading, setLoading] = useState(true);
   const [regresando, setRegresando] = useState(null);
   const [itemsRegreso, setItemsRegreso] = useState([]);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
     loadSalidas();
@@ -33,22 +34,38 @@ export default function MisSalidas() {
     }
   };
 
-  const openRegresoForm = (salida) => {
+  const openRegresoForm = async (salida) => {
     setRegresando(salida);
-    const items = (salida.SalidaCamionItems || []).map((item) => ({
-      productoId: item.productoId,
-      nombre: item.Producto?.nombre,
-      precio_unitario: parseFloat(item.precio_unitario),
-      cantidad_enviada: item.cantidad,
-      cantidad_regreso: 0,
-    }));
-    setItemsRegreso(items);
+    try {
+      const res = await salidasAPI.getStockCamion(salida.id);
+      const stockMap = {};
+      for (const s of res.data.items) {
+        stockMap[s.productoId] = s;
+      }
+      const items = (salida.SalidaCamionItems || []).map((item) => {
+        const stock = stockMap[item.productoId];
+        const vendido = stock ? stock.vendido : 0;
+        const maxDevolver = item.cantidad - vendido;
+        return {
+          productoId: item.productoId,
+          nombre: item.Producto?.nombre,
+          precio_unitario: parseFloat(item.precio_unitario),
+          cantidad_enviada: item.cantidad,
+          cantidad_vendida: vendido,
+          max_devolver: maxDevolver,
+          cantidad_regreso: 0,
+        };
+      });
+      setItemsRegreso(items);
+    } catch (error) {
+      alert("Error al obtener stock del camion: " + (error.response?.data?.message || error.message));
+    }
   };
 
   const handleCantidadRegreso = (index, value) => {
     const newItems = [...itemsRegreso];
     const cant = parseInt(value) || 0;
-    newItems[index].cantidad_regreso = Math.min(cant, newItems[index].cantidad_enviada);
+    newItems[index].cantidad_regreso = Math.min(cant, newItems[index].max_devolver);
     setItemsRegreso(newItems);
   };
 
@@ -60,12 +77,11 @@ export default function MisSalidas() {
 
   const confirmarRegreso = async () => {
     if (!regresando) return;
+    setShowConfirm(true);
+  };
 
-    const confirmado = window.confirm(
-      "REQUERIDO: Para confirmar el regreso primero debe registrar la mercaderia vendida como Venta por Reparto en la seccion de Ventas.\n\nSi no registro la venta por reparto, el regreso no podra completarse.\n\n¿Desea continuar?"
-    );
-    if (!confirmado) return;
-
+  const ejecutarRegreso = async () => {
+    setShowConfirm(false);
     try {
       const items_para_enviar = itemsRegreso
         .filter((item) => item.cantidad_regreso > 0)
@@ -99,6 +115,41 @@ export default function MisSalidas() {
       <h2>Mis Salidas de Camion</h2>
       <p className="subtitle">Solo puedes cambiar el estado de tus salidas</p>
 
+      {showConfirm && (
+        <div className="modal-overlay" style={{ zIndex: 1001 }} onClick={() => setShowConfirm(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div style={{ textAlign: "center", marginBottom: "1rem" }}>
+              <div style={{
+                width: "56px", height: "56px", borderRadius: "50%",
+                background: "rgba(245, 158, 11, 0.15)", display: "flex",
+                alignItems: "center", justifyContent: "center", margin: "0 auto 1rem"
+              }}>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                  <line x1="12" y1="9" x2="12" y2="13"/>
+                  <line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+              </div>
+              <h3 style={{ color: "var(--warning)", marginBottom: "0.5rem" }}>Aviso Importante</h3>
+            </div>
+            <p style={{ textAlign: "center", color: "var(--text)", lineHeight: "1.6", marginBottom: "0.5rem" }}>
+              Para confirmar el regreso primero debe registrar la mercaderia vendida como <strong>Venta por Reparto</strong> en la seccion de Ventas.
+            </p>
+            <p style={{ textAlign: "center", color: "var(--danger)", fontWeight: "500", marginBottom: "1.5rem" }}>
+              Si no registro la venta por reparto, el regreso no podra completarse.
+            </p>
+            <div className="modal-actions">
+              <button className="btn btn-secondary" onClick={() => setShowConfirm(false)}>
+                Cancelar
+              </button>
+              <button className="btn btn-primary" onClick={ejecutarRegreso}>
+                Confirmar Regreso
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {regresando && (
         <div className="modal-overlay" onClick={() => setRegresando(null)}>
           <div className="modal-card modal-wide" onClick={(e) => e.stopPropagation()}>
@@ -111,7 +162,9 @@ export default function MisSalidas() {
                   <tr>
                     <th>Producto</th>
                     <th>Precio Unit.</th>
-                    <th>Enviados</th>
+                    <th>Cargados</th>
+                    <th>Vendidos</th>
+                    <th>Max. Devolver</th>
                     <th>Regresan</th>
                     <th>Subtotal</th>
                   </tr>
@@ -122,11 +175,15 @@ export default function MisSalidas() {
                       <td><strong>{item.nombre}</strong></td>
                       <td>${item.precio_unitario}</td>
                       <td>{item.cantidad_enviada}</td>
+                      <td style={{ color: item.cantidad_vendida > 0 ? "var(--primary)" : "inherit", fontWeight: item.cantidad_vendida > 0 ? "bold" : "normal" }}>
+                        {item.cantidad_vendida}
+                      </td>
+                      <td style={{ fontWeight: "bold" }}>{item.max_devolver}</td>
                       <td>
                         <input
                           type="number"
                           min="0"
-                          max={item.cantidad_enviada}
+                          max={item.max_devolver}
                           value={item.cantidad_regreso}
                           onChange={(e) => handleCantidadRegreso(index, e.target.value)}
                           className="input-cantidad"
