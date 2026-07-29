@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 
 import sequelize from "./config/database.js";
 import "./models/index.js";
+import { Banco } from "./models/index.js";
 
 import authRoutes from "./routes/authRoutes.js";
 import proveedorRoutes from "./routes/proveedorRoutes.js";
@@ -14,6 +15,7 @@ import cierreCajaRoutes from "./routes/cierreCajaRoutes.js";
 import ventaRoutes from "./routes/ventaRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import clienteRoutes from "./routes/clienteRoutes.js";
+import bancoRoutes from "./routes/bancoRoutes.js";
 
 dotenv.config();
 
@@ -32,6 +34,7 @@ app.use("/api/cierre-caja", cierreCajaRoutes);
 app.use("/api/ventas", ventaRoutes);
 app.use("/api/usuarios", userRoutes);
 app.use("/api/clientes", clienteRoutes);
+app.use("/api/bancos", bancoRoutes);
 
 app.get("/api/health", (req, res) => {
   res.json({ message: "Los Pollos Hermanos API - Funcionando!" });
@@ -51,8 +54,29 @@ const start = async () => {
       await sequelize.query("ALTER TABLE Venta ADD COLUMN salidaCamionId INTEGER REFERENCES SalidaCamions(id)");
       console.log("Columna salidaCamionId agregada a Venta");
     }
+    const hasDatosTransferencia = cols.some((c) => c.name === "datos_transferencia");
+    if (!hasDatosTransferencia) {
+      await sequelize.query("ALTER TABLE Venta ADD COLUMN datos_transferencia TEXT");
+      console.log("Columna datos_transferencia agregada a Venta");
+    }
+    const hasDatosTarjeta = cols.some((c) => c.name === "datos_tarjeta");
+    if (!hasDatosTarjeta) {
+      await sequelize.query("ALTER TABLE Venta ADD COLUMN datos_tarjeta TEXT");
+      console.log("Columna datos_tarjeta agregada a Venta");
+    }
+    const hasMontoDeudaPagado = cols.some((c) => c.name === "monto_deuda_pagado");
+    if (!hasMontoDeudaPagado) {
+      await sequelize.query("ALTER TABLE Venta ADD COLUMN monto_deuda_pagado DECIMAL(10,2)");
+      console.log("Columna monto_deuda_pagado agregada a Venta");
+    }
 
-    app.listen(PORT, () => {
+    const bancosDefault = ["Banco Nación", "Banco Provincia", "Banco Galicia", "Banco Santander", "Banco BBVA", "Banco Macro", "Banco Ciudad", "Banco Patagonia", "Banco Supervielle", "Banco Hipotecario"];
+    for (const nombre of bancosDefault) {
+      await Banco.findOrCreate({ where: { nombre }, defaults: { nombre } });
+    }
+    console.log("Bancos por defecto verificados");
+
+    app.listen(PORT, "0.0.0.0", () => {
       console.log(`Servidor corriendo en puerto ${PORT}`);
       console.log(`API: http://localhost:${PORT}/api`);
     });

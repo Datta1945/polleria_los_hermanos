@@ -77,6 +77,22 @@ const Venta = sequelize.define("Venta", {
     defaultValue: "completada",
     validate: { isIn: [["completada", "cancelada"]] },
   },
+  datos_transferencia: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    comment: "Array de datos bancarios para pagos por transferencia",
+  },
+  datos_tarjeta: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    comment: "Array de datos bancarios para pagos por tarjeta",
+  },
+  monto_deuda_pagado: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: true,
+    defaultValue: null,
+    comment: "Monto pagado de deuda incluido en esta venta",
+  },
 });
 
 export default Venta;

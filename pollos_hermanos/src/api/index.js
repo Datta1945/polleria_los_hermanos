@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const API = axios.create({
-  baseURL: "http://localhost:4000/api",
+  baseURL: "/api",
 });
 
 API.interceptors.request.use((config) => {
@@ -75,6 +75,7 @@ export const cierreCajaAPI = {
   getResumenHoy: () => API.get("/cierre-caja/resumen-hoy"),
   cerrar: () => API.post("/cierre-caja/cerrar"),
   getHistorial: () => API.get("/cierre-caja/historial"),
+  getPagosHoy: (fecha) => API.get("/cierre-caja/pagos-hoy", { params: fecha ? { fecha } : {} }),
 };
 
 export const ventasAPI = {
@@ -104,6 +105,12 @@ export const clientesAPI = {
   delete: (id) => API.delete(`/clientes/${id}`),
   getHistorialCC: (id) => API.get(`/clientes/${id}/historial-cc`),
   registrarPagoCC: (id, data) => API.post(`/clientes/${id}/pago-cc`, data),
+};
+
+export const bancosAPI = {
+  getAll: () => API.get("/bancos"),
+  create: (data) => API.post("/bancos", data),
+  delete: (id) => API.delete(`/bancos/${id}`),
 };
 
 export default API;

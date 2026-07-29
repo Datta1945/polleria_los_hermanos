@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
@@ -5,8 +6,14 @@ export default function Navbar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [location.pathname]);
 
   const handleLogout = () => {
+    setMenuOpen(false);
     logout();
     navigate("/login");
   };
@@ -19,13 +26,17 @@ export default function Navbar() {
   return (
     <nav className="navbar">
       <div className="nav-brand">Los Pollos Hermanos</div>
-      <div className="nav-links">
+      <button className="hamburger" onClick={() => setMenuOpen(!menuOpen)} aria-label="Menu">
+        <span className={`hamburger-line ${menuOpen ? "open" : ""}`}></span>
+        <span className={`hamburger-line ${menuOpen ? "open" : ""}`}></span>
+        <span className={`hamburger-line ${menuOpen ? "open" : ""}`}></span>
+      </button>
+      <div className={`nav-links ${menuOpen ? "nav-links-open" : ""}`}>
         {isRepartidor ? (
           <>
             <Link to="/" className={isActive("/")}>Dashboard</Link>
             <Link to="/salida/nueva" className={isActive("/salida/nueva")}>Registro Salidas</Link>
             <Link to="/ventas" className={isActive("/ventas")}>Ventas</Link>
-            <Link to="/clientes" className={isActive("/clientes")}>Clientes</Link>
             <Link to="/historial" className={isActive("/historial")}>Historial</Link>
           </>
         ) : (
@@ -42,6 +53,10 @@ export default function Navbar() {
             )}
           </>
         )}
+        <div className="nav-links-footer">
+          <span className="user-info-mobile">{user?.nombre} <span className="role-badge">{user?.role}</span></span>
+          <button className="btn btn-sm btn-logout btn-logout-mobile" onClick={handleLogout}>Salir</button>
+        </div>
       </div>
       <div className="nav-user">
         <span className="user-info">

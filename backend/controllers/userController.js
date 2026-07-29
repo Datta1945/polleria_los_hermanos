@@ -3,16 +3,34 @@ import { Op } from "sequelize";
 
 export const getRepartidores = async (req, res) => {
   try {
-    const repartidorRole = await Role.findOne({ where: { nombre: "repartidor" } });
-    if (!repartidorRole) {
-      return res.json([]);
+    const roles = await Role.findAll();
+    const roleMap = {};
+    for (const r of roles) roleMap[r.nombre] = r.id;
+
+    let where = { activo: true };
+
+    if (req.userRole === "admin") {
+      // admin can select any user
+    } else if (req.userRole === "operador") {
+      // operador can select repartidores and themselves
+      where = {
+        activo: true,
+        [Op.or]: [
+          { roleId: roleMap["repartidor"] },
+          { id: req.user.id },
+        ],
+      };
+    } else {
+      // repartidor: only repartidores
+      where.roleId = roleMap["repartidor"];
     }
-    const repartidores = await User.findAll({
-      where: { activo: true, roleId: repartidorRole.id },
+
+    const users = await User.findAll({
+      where,
       attributes: ["id", "nombre", "email"],
       order: [["nombre", "ASC"]],
     });
-    res.json(repartidores);
+    res.json(users);
   } catch (error) {
     res.status(500).json({ message: "Error al obtener repartidores", error: error.message });
   }

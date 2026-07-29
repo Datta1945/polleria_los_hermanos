@@ -25,6 +25,8 @@ export const crearVenta = async (req, res) => {
       pagar_deuda,
       monto_deuda,
       salidaCamionId,
+      datos_transferencia,
+      datos_tarjeta,
     } = req.body;
 
     if (!items || items.length === 0) {
@@ -188,6 +190,9 @@ export const crearVenta = async (req, res) => {
       salidaCamionId: esReparto ? salidaCamionId : null,
       notas,
       usuarioId: req.user.id,
+      datos_transferencia: datos_transferencia || null,
+      datos_tarjeta: datos_tarjeta || null,
+      monto_deuda_pagado: pagar_deuda && monto_deuda ? parseFloat(monto_deuda) : null,
     });
 
     if (esPagoDividido) {
@@ -249,11 +254,27 @@ export const getVentas = async (req, res) => {
     if (req.query.tipo_venta) where.tipo_venta = req.query.tipo_venta;
     if (req.query.usuarioId) where.usuarioId = req.query.usuarioId;
     if (req.query.medio_pago) where.medio_pago = req.query.medio_pago;
-    if (req.query.cliente_nombre) {
-      where.cliente_nombre = { [Op.like]: `%${req.query.cliente_nombre}%` };
-    }
     if (req.query.numero_comprobante) {
       where.numero_comprobante = { [Op.like]: `%${req.query.numero_comprobante}%` };
+    }
+
+    if (req.query.buscar) {
+      const term = `%${req.query.buscar}%`;
+      const users = await User.findAll({
+        where: { nombre: { [Op.like]: term } },
+        attributes: ["id"],
+      });
+      const salidas = await SalidaCamion.findAll({
+        where: { camion: { [Op.like]: term } },
+        attributes: ["id"],
+      });
+      const userIds = users.map(u => u.id);
+      const salidaIds = salidas.map(s => s.id);
+      const ors = [];
+      if (userIds.length) ors.push({ usuarioId: { [Op.in]: userIds } });
+      if (salidaIds.length) ors.push({ salidaCamionId: { [Op.in]: salidaIds } });
+      if (ors.length) where[Op.or] = ors;
+      else where.id = -1;
     }
 
     const ventas = await Venta.findAll({
@@ -266,6 +287,7 @@ export const getVentas = async (req, res) => {
         { model: VentaPago },
         { model: User, as: "vendedor", attributes: ["id", "nombre"] },
         { model: Cliente, as: "cliente", attributes: ["id", "nombre", "saldo_pendiente"] },
+        { model: SalidaCamion, as: "salida_camion", attributes: ["id", "camion"] },
       ],
       order: [["createdAt", "DESC"]],
     });

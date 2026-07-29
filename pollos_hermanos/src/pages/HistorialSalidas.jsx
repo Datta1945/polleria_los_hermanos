@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { salidasAPI } from "../api";
 
 export default function HistorialSalidas() {
   const [salidas, setSalidas] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [filtros, setFiltros] = useState({ buscar: "", fecha: "", estado: "" });
 
   useEffect(() => {
     loadSalidas();
@@ -30,6 +31,20 @@ export default function HistorialSalidas() {
     }
   };
 
+  const salidasFiltradas = useMemo(() => {
+    return salidas.filter((s) => {
+      if (filtros.buscar) {
+        const q = filtros.buscar.toLowerCase();
+        const camion = (s.camion || "").toLowerCase();
+        const repartidor = (s.repartidor_asignado?.nombre || "").toLowerCase();
+        if (!camion.includes(q) && !repartidor.includes(q)) return false;
+      }
+      if (filtros.fecha && s.fecha !== filtros.fecha) return false;
+      if (filtros.estado && s.estado !== filtros.estado) return false;
+      return true;
+    });
+  }, [salidas, filtros]);
+
   const estadoColors = {
     pendiente: "#f59e0b",
     en_camino: "#3b82f6",
@@ -43,8 +58,43 @@ export default function HistorialSalidas() {
     <div>
       <h2>Historial de Salidas de Camión</h2>
 
-      {salidas.length === 0 ? (
-        <p className="empty">No hay salidas registradas</p>
+      <div className="form-card filtros-card">
+        <div className="filtros-grid">
+          <div className="form-group">
+            <label>Camion / Repartidor</label>
+            <input
+              name="buscar"
+              value={filtros.buscar}
+              onChange={(e) => setFiltros({ ...filtros, buscar: e.target.value })}
+              placeholder="Buscar por camion o repartidor..."
+            />
+          </div>
+          <div className="form-group">
+            <label>Fecha</label>
+            <input
+              type="date"
+              value={filtros.fecha}
+              onChange={(e) => setFiltros({ ...filtros, fecha: e.target.value })}
+            />
+          </div>
+          <div className="form-group">
+            <label>Estado</label>
+            <select
+              value={filtros.estado}
+              onChange={(e) => setFiltros({ ...filtros, estado: e.target.value })}
+            >
+              <option value="">Todos</option>
+              <option value="pendiente">Pendiente</option>
+              <option value="en_camino">En Camino</option>
+              <option value="entregado">Entregado</option>
+              <option value="cancelado">Cancelado</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {salidasFiltradas.length === 0 ? (
+        <p className="empty">No hay salidas que coincidan con los filtros</p>
       ) : (
         <div className="table-container">
           <table>
@@ -64,7 +114,7 @@ export default function HistorialSalidas() {
               </tr>
             </thead>
             <tbody>
-              {salidas.map((s) => (
+              {salidasFiltradas.map((s) => (
                 <tr key={s.id}>
                   <td>{s.fecha}</td>
                   <td><strong>{s.camion}</strong></td>
@@ -72,11 +122,13 @@ export default function HistorialSalidas() {
                     {s.cliente?.nombre || s.cliente_nombre}
                   </td>
                   <td>
-                    {s.SalidaCamionItems?.map((item) => (
-                      <span key={item.id} className="badge">
-                        {item.cantidad}x {item.Producto?.nombre}
-                      </span>
-                    ))}
+                    <div className="badge-grid">
+                      {s.SalidaCamionItems?.map((item) => (
+                        <span key={item.id} className="badge">
+                          {item.cantidad}x {item.Producto?.nombre}
+                        </span>
+                      ))}
+                    </div>
                   </td>
                   <td><strong>${s.precio_total}</strong></td>
                   <td>{s.monto_salida ? <strong className="monto-salida">${s.monto_salida}</strong> : "-"}</td>

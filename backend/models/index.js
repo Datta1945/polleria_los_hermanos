@@ -12,6 +12,7 @@ import VentaItem from "./VentaItem.js";
 import VentaPago from "./VentaPago.js";
 import Cliente from "./Cliente.js";
 import ClientePago from "./ClientePago.js";
+import Banco from "./Banco.js";
 
 User.belongsTo(Role, { foreignKey: "roleId" });
 Role.hasMany(User, { foreignKey: "roleId" });
@@ -64,4 +65,4 @@ SalidaCamion.hasMany(Venta, { foreignKey: "salidaCamionId" });
 ClientePago.belongsTo(Cliente, { foreignKey: "clienteId" });
 Cliente.hasMany(ClientePago, { foreignKey: "clienteId" });
 
-export { User, Role, Proveedor, Producto, Reparto, RepartoItem, SalidaCamion, SalidaCamionItem, CierreCaja, Venta, VentaItem, VentaPago, Cliente, ClientePago };
+export { User, Role, Proveedor, Producto, Reparto, RepartoItem, SalidaCamion, SalidaCamionItem, CierreCaja, Venta, VentaItem, VentaPago, Cliente, ClientePago, Banco };

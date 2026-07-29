@@ -199,4 +199,52 @@ export const getHistorialCierres = async (req, res) => {
   }
 };
 
+export const getPagosHoy = async (req, res) => {
+  try {
+    const fecha = req.query.fecha || new Date().toISOString().split("T")[0];
+
+    const ventasHoy = await Venta.findAll({
+      where: { fecha, estado: "completada" },
+      attributes: ["id", "fecha", "hora", "datos_transferencia", "datos_tarjeta"],
+    });
+
+    const pagos = [];
+
+    const parseDatos = (datos) => {
+      if (!datos) return [];
+      if (typeof datos === "string") {
+        try { return JSON.parse(datos); } catch { return []; }
+      }
+      if (Array.isArray(datos)) return datos;
+      return [];
+    };
+
+    for (const venta of ventasHoy) {
+      for (const t of parseDatos(venta.datos_transferencia)) {
+        pagos.push({
+          tipo: "Transferencia",
+          fecha_hora: t.fecha_hora || `${venta.fecha} ${venta.hora}`,
+          nombre_cuenta: t.nombre_cuenta || "-",
+          monto: parseFloat(t.monto || 0),
+          banco: t.banco || "-",
+        });
+      }
+
+      for (const t of parseDatos(venta.datos_tarjeta)) {
+        pagos.push({
+          tipo: "Tarjeta",
+          fecha_hora: t.fecha_hora || `${venta.fecha} ${venta.hora}`,
+          nombre_cuenta: t.nombre_cuenta || "-",
+          monto: parseFloat(t.monto || 0),
+          banco: t.banco || "-",
+        });
+      }
+    }
+
+    res.json(pagos);
+  } catch (error) {
+    res.status(500).json({ message: "Error al obtener pagos del dia", error: error.message });
+  }
+};
+
 export { checkDayClosed };

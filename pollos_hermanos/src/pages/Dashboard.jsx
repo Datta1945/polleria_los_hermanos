@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { salidasAPI, cierreCajaAPI, productosAPI } from "../api";
+import { generarResumenPagosPDF } from "../utils/generarPDF";
 
 export default function Dashboard() {
   const [stats, setStats] = useState(null);
@@ -9,6 +10,11 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [cerrando, setCerrando] = useState(false);
   const [camionActivo, setCamionActivo] = useState(null);
+  const [regresando, setRegresando] = useState(null);
+  const [itemsRegreso, setItemsRegreso] = useState([]);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [cancelandoId, setCancelandoId] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -43,11 +49,87 @@ export default function Dashboard() {
     }
   };
 
+  const openRegresoForm = async (salida) => {
+    setRegresando(salida);
+    try {
+      const res = await salidasAPI.getStockCamion(salida.id);
+      const stockMap = {};
+      for (const s of res.data.items) {
+        stockMap[s.productoId] = s;
+      }
+      const items = (salida.SalidaCamionItems || []).map((item) => {
+        const stock = stockMap[item.productoId];
+        const vendido = stock ? stock.vendido : 0;
+        const maxDevolver = item.cantidad - vendido;
+        return {
+          productoId: item.productoId,
+          nombre: item.Producto?.nombre,
+          precio_unitario: parseFloat(item.precio_unitario),
+          cantidad_enviada: item.cantidad,
+          cantidad_vendida: vendido,
+          max_devolver: maxDevolver,
+          cantidad_regreso: 0,
+        };
+      });
+      setItemsRegreso(items);
+    } catch (error) {
+      alert("Error al obtener stock del camion: " + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const handleCantidadRegreso = (index, value) => {
+    const newItems = [...itemsRegreso];
+    const cant = parseInt(value) || 0;
+    newItems[index].cantidad_regreso = Math.min(cant, newItems[index].max_devolver);
+    setItemsRegreso(newItems);
+  };
+
+  const calcularMontoRegreso = () => {
+    return itemsRegreso.reduce((sum, item) => {
+      return sum + item.precio_unitario * item.cantidad_regreso;
+    }, 0);
+  };
+
+  const confirmarEntregado = () => {
+    setShowConfirm(true);
+  };
+
+  const ejecutarEntregado = async () => {
+    setShowConfirm(false);
+    if (!regresando) return;
+    try {
+      const items_para_enviar = itemsRegreso
+        .filter((item) => item.cantidad_regreso > 0)
+        .map((item) => ({
+          productoId: item.productoId,
+          cantidad: item.cantidad_regreso,
+        }));
+
+      await salidasAPI.registrarRegreso(regresando.id, {
+        items_regreso: items_para_enviar,
+      });
+      setRegresando(null);
+      loadData();
+    } catch (error) {
+      alert("Error: " + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const handleEntregadoClick = (id) => {
+    const salida = salidas.find((s) => s.id === id);
+    if (salida) openRegresoForm(salida);
+  };
+
   const handleCerrarCaja = async () => {
     if (!confirm("¿Cerrar la caja del dia? No se podran hacer mas modificaciones.")) return;
     setCerrando(true);
     try {
       await cierreCajaAPI.cerrar();
+      const res = await cierreCajaAPI.getPagosHoy();
+      if (res.data && res.data.length > 0) {
+        const hoy = new Date().toISOString().split("T")[0];
+        generarResumenPagosPDF(res.data, hoy);
+      }
       alert("Caja cerrada exitosamente!");
       loadData();
     } catch (error) {
@@ -90,6 +172,140 @@ export default function Dashboard() {
   return (
     <div>
       <h2>Dashboard</h2>
+
+      {showCancelConfirm && (
+        <div className="modal-overlay" style={{ zIndex: 1001 }} onClick={() => setShowCancelConfirm(false)}>
+          <div className="modal-card modal-responsive" onClick={(e) => e.stopPropagation()}>
+            <div style={{ textAlign: "center", marginBottom: "1rem" }}>
+              <div style={{
+                width: "56px", height: "56px", borderRadius: "50%",
+                background: "rgba(239, 68, 68, 0.15)", display: "flex",
+                alignItems: "center", justifyContent: "center", margin: "0 auto 1rem"
+              }}>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="15" y1="9" x2="9" y2="15"/>
+                  <line x1="9" y1="9" x2="15" y2="15"/>
+                </svg>
+              </div>
+              <h3 style={{ color: "var(--danger)", marginBottom: "0.5rem" }}>Cancelar Envio</h3>
+            </div>
+            <p style={{ textAlign: "center", color: "var(--text)", lineHeight: "1.6", marginBottom: "1.5rem" }}>
+              Desea cancelar el envio?
+            </p>
+            <div className="modal-actions">
+              <button className="btn btn-secondary" onClick={() => setShowCancelConfirm(false)}>
+                No, Volver
+              </button>
+              <button className="btn btn-cancel" onClick={() => { setShowCancelConfirm(false); updateEstado(cancelandoId, "cancelado"); }}>
+                Si, Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showConfirm && (
+        <div className="modal-overlay" style={{ zIndex: 1001 }} onClick={() => setShowConfirm(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div style={{ textAlign: "center", marginBottom: "1rem" }}>
+              <div style={{
+                width: "56px", height: "56px", borderRadius: "50%",
+                background: "rgba(245, 158, 11, 0.15)", display: "flex",
+                alignItems: "center", justifyContent: "center", margin: "0 auto 1rem"
+              }}>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                  <line x1="12" y1="9" x2="12" y2="13"/>
+                  <line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+              </div>
+              <h3 style={{ color: "var(--warning)", marginBottom: "0.5rem" }}>Aviso Importante</h3>
+            </div>
+            <p style={{ textAlign: "center", color: "var(--text)", lineHeight: "1.6", marginBottom: "0.5rem" }}>
+              Para confirmar la entrega primero debe registrar la mercaderia vendida como <strong>Venta por Reparto</strong> en la seccion de Ventas.
+            </p>
+            <p style={{ textAlign: "center", color: "var(--danger)", fontWeight: "500", marginBottom: "1.5rem" }}>
+              Si no registro la venta por reparto, la entrega no podra completarse.
+            </p>
+            <div className="modal-actions">
+              <button className="btn btn-secondary" onClick={() => setShowConfirm(false)}>
+                Cancelar
+              </button>
+              <button className="btn btn-primary" onClick={ejecutarEntregado}>
+                Confirmar Entrega
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {regresando && (
+        <div className="modal-overlay" onClick={() => setRegresando(null)}>
+          <div className="modal-card modal-wide" onClick={(e) => e.stopPropagation()}>
+            <h3>Registrar Entrega - {regresando.camion}</h3>
+            <p className="subtitle">Selecciona los productos que regresaron y sus cantidades</p>
+
+            <div className="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Producto</th>
+                    <th>Precio Unit.</th>
+                    <th>Cargados</th>
+                    <th>Vendidos</th>
+                    <th>Max. Devolver</th>
+                    <th>Regresan</th>
+                    <th>Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {itemsRegreso.map((item, index) => (
+                    <tr key={item.productoId}>
+                      <td><strong>{item.nombre}</strong></td>
+                      <td>${item.precio_unitario}</td>
+                      <td>{item.cantidad_enviada}</td>
+                      <td style={{ color: item.cantidad_vendida > 0 ? "var(--primary)" : "inherit", fontWeight: item.cantidad_vendida > 0 ? "bold" : "normal" }}>
+                        {item.cantidad_vendida}
+                      </td>
+                      <td style={{ fontWeight: "bold" }}>{item.max_devolver}</td>
+                      <td>
+                        <input
+                          type="number"
+                          min="0"
+                          max={item.max_devolver}
+                          value={item.cantidad_regreso}
+                          onChange={(e) => handleCantidadRegreso(index, e.target.value)}
+                          className="input-cantidad"
+                        />
+                      </td>
+                      <td style={{ color: "var(--danger)", fontWeight: "bold" }}>
+                        ${(item.precio_unitario * item.cantidad_regreso).toFixed(2)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="resumen-card" style={{ marginTop: "1rem" }}>
+              <div className="resumen-row">
+                <span>Monto de Regreso:</span>
+                <strong style={{ color: "var(--danger)" }}>${calcularMontoRegreso().toFixed(2)}</strong>
+              </div>
+            </div>
+
+            <div className="modal-actions">
+              <button className="btn btn-secondary" onClick={() => setRegresando(null)}>
+                Cancelar
+              </button>
+              <button className="btn btn-entregado" onClick={confirmarEntregado}>
+                Confirmar Entrega
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {stats && (
         <div className="stats-grid">
@@ -272,7 +488,7 @@ export default function Dashboard() {
               </div>
               <div className="cierre-col">
                 <div className="cierre-block">
-                  <h4>Ventas de Local</h4>
+                  <h4>Ventas Mayoristas</h4>
                   <div className="cierre-item"><span>Ventas:</span><strong>{resumen.local_count}</strong></div>
                   <div className="cierre-item"><span>Total:</span><strong className="monto-ventas">${resumen.local_monto}</strong></div>
                 </div>
@@ -322,30 +538,19 @@ export default function Dashboard() {
               <thead>
                 <tr>
                   <th>Camion</th>
-                  <th>Mercaderia</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                  <th>Repartidor</th>
                   <th>Monto Salida</th>
                   <th>Monto Regreso</th>
                   <th>Total</th>
-                  <th>Repartidor</th>
-                  <th>Estado</th>
-                  <th>Acciones</th>
+                  <th>Mercaderia</th>
                 </tr>
               </thead>
               <tbody>
                 {salidas.map((s) => (
                   <tr key={s.id}>
                     <td><strong>{s.camion}</strong></td>
-                    <td>
-                      {s.SalidaCamionItems?.map((item) => (
-                        <span key={item.id} className="badge">
-                          {item.cantidad}x {item.Producto?.nombre}
-                        </span>
-                      ))}
-                    </td>
-                    <td>{s.monto_salida ? <strong className="monto-salida">${s.monto_salida}</strong> : "-"}</td>
-                    <td>{s.monto_regreso ? <strong className="monto-regreso">${s.monto_regreso}</strong> : "-"}</td>
-                    <td><strong>${(parseFloat(s.monto_salida || 0) - parseFloat(s.monto_regreso || 0)).toFixed(2)}</strong></td>
-                    <td>{s.repartidor_asignado?.nombre || "-"}</td>
                     <td>
                       <span
                         className="estado-badge"
@@ -367,19 +572,32 @@ export default function Dashboard() {
                         {s.estado === "en_camino" && (
                           <button
                             className="btn btn-sm btn-entregado"
-                            onClick={() => updateEstado(s.id, "entregado")}
+                            onClick={() => handleEntregadoClick(s.id)}
                           >
-                            Entregado
+                            Registrar Entrega
                           </button>
                         )}
                         {s.estado !== "entregado" && s.estado !== "cancelado" && (
                           <button
                             className="btn btn-sm btn-cancel"
-                            onClick={() => updateEstado(s.id, "cancelado")}
+                            onClick={() => { setCancelandoId(s.id); setShowCancelConfirm(true); }}
                           >
                             Cancelar
                           </button>
                         )}
+                      </div>
+                    </td>
+                    <td>{s.repartidor_asignado?.nombre || "-"}</td>
+                    <td>{s.monto_salida ? <strong className="monto-salida">${s.monto_salida}</strong> : "-"}</td>
+                    <td>{s.monto_regreso ? <strong className="monto-regreso">${s.monto_regreso}</strong> : "-"}</td>
+                    <td><strong>${(parseFloat(s.monto_salida || 0) - parseFloat(s.monto_regreso || 0)).toFixed(2)}</strong></td>
+                    <td>
+                      <div className="badge-grid">
+                        {s.SalidaCamionItems?.map((item) => (
+                          <span key={item.id} className="badge">
+                            {item.cantidad}x {item.Producto?.nombre}
+                          </span>
+                        ))}
                       </div>
                     </td>
                   </tr>

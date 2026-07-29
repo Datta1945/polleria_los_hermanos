@@ -136,6 +136,21 @@ export default function NuevaSalida() {
             />
           </div>
 
+          {!isRepartidor && !repartidorSeleccionado && (
+            <div style={{
+              background: "#fff3cd",
+              border: "1px solid #ffc107",
+              borderRadius: "6px",
+              padding: "0.75rem 1rem",
+              marginBottom: "0.75rem",
+              color: "#856404",
+              fontWeight: "600",
+              fontSize: "0.9rem",
+            }}>
+              ⚠ Debe seleccionar un repartidor antes de registrar la salida.
+            </div>
+          )}
+
           {!isRepartidor && (
             <div className="form-group">
               <label>Repartidor Asignado *</label>
@@ -191,7 +206,19 @@ export default function NuevaSalida() {
                       >
                         -
                       </button>
-                      <span>{qty}</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max={p.stock}
+                        value={qty}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value) || 0;
+                          setCantidades((prev) => ({
+                            ...prev,
+                            [p.id]: Math.min(Math.max(0, val), p.stock),
+                          }));
+                        }}
+                      />
                       <button
                         type="button"
                         onClick={() => toggleCantidad(p.id, 1)}

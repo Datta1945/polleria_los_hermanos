@@ -1,7 +1,10 @@
 import { useState, useEffect } from "react";
+import { useAuth } from "../context/AuthContext";
 import { cierreCajaAPI } from "../api";
+import { generarResumenPagosPDF } from "../utils/generarPDF";
 
 export default function HistorialCierres() {
+  const { user } = useAuth();
   const [cierres, setCierres] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -17,6 +20,15 @@ export default function HistorialCierres() {
       console.error("Error:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCierrePDF = async (cierre) => {
+    try {
+      const res = await cierreCajaAPI.getPagosHoy(cierre.fecha);
+      generarResumenPagosPDF(res.data, cierre.fecha);
+    } catch (error) {
+      alert("Error: " + (error.response?.data?.message || error.message));
     }
   };
 
@@ -41,6 +53,7 @@ export default function HistorialCierres() {
                 <th>Ventas Netas</th>
                 <th>Total Ventas</th>
                 <th>Usuario</th>
+                {user?.role === "admin" && <th>PDF</th>}
               </tr>
             </thead>
             <tbody>
@@ -54,6 +67,16 @@ export default function HistorialCierres() {
                   <td className="monto-ventas"><strong>${c.ventas_netas}</strong></td>
                   <td><strong>${c.total_ventas}</strong></td>
                   <td>{c.usuario_cierre}</td>
+                  {user?.role === "admin" && (
+                    <td>
+                      <button
+                        className="btn btn-sm btn-cierre-pdf"
+                        onClick={() => handleCierrePDF(c)}
+                      >
+                        PDF
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

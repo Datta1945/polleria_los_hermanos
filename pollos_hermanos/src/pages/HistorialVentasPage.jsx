@@ -9,7 +9,7 @@ export default function HistorialVentasPage() {
   const [loading, setLoading] = useState(true);
   const [filtros, setFiltros] = useState({
     fecha: "",
-    cliente_nombre: "",
+    buscar: "",
     numero_comprobante: "",
     tipo_venta: "",
     usuarioId: "",
@@ -44,7 +44,7 @@ export default function HistorialVentasPage() {
   };
 
   const limpiarFiltros = () => {
-    setFiltros({ fecha: "", cliente_nombre: "", numero_comprobante: "", tipo_venta: "", usuarioId: "" });
+    setFiltros({ fecha: "", buscar: "", numero_comprobante: "", tipo_venta: "", usuarioId: "" });
     loadVentas();
   };
 
@@ -80,10 +80,10 @@ export default function HistorialVentasPage() {
             <input type="date" name="fecha" value={filtros.fecha} onChange={handleFiltro} />
           </div>
           <div className="form-group">
-            <label>Cliente</label>
-            <input name="cliente_nombre" value={filtros.cliente_nombre} onChange={handleFiltro} placeholder="Nombre..." />
+            <label>Camion / Repartidor</label>
+            <input name="buscar" value={filtros.buscar} onChange={handleFiltro} placeholder="Camion o repartidor..." />
           </div>
-          <div className="form-group">
+          <div className="form-group" style={{ display: "none" }}>
             <label>Nro Comprobante</label>
             <input name="numero_comprobante" value={filtros.numero_comprobante} onChange={handleFiltro} placeholder="VTA-..." />
           </div>
@@ -109,10 +109,11 @@ export default function HistorialVentasPage() {
           <table>
             <thead>
               <tr>
-                <th>Nro</th>
+                <th className="hide-col">Nro</th>
                 <th>Fecha</th>
                 <th>Hora</th>
                 <th>Tipo</th>
+                <th>Camion</th>
                 <th>Cliente</th>
                 <th>Productos</th>
                 <th>Medio Pago</th>
@@ -124,7 +125,7 @@ export default function HistorialVentasPage() {
             <tbody>
               {ventas.map((v) => (
                 <tr key={v.id}>
-                  <td><strong>{v.numero_comprobante}</strong></td>
+                  <td className="hide-col"><strong>{v.numero_comprobante}</strong></td>
                   <td>{v.fecha}</td>
                   <td>{v.hora}</td>
                   <td>
@@ -132,13 +133,16 @@ export default function HistorialVentasPage() {
                       {v.tipo_venta === "local" ? "Local" : "Reparto"}
                     </span>
                   </td>
+                  <td>{v.salida_camion?.camion || "-"}</td>
                   <td>{v.cliente?.nombre || v.cliente_nombre}</td>
                   <td>
-                    {v.VentaItems?.map((item) => (
-                      <span key={item.id} className="badge">
-                        {item.cantidad}x {item.Producto?.nombre}
-                      </span>
-                    ))}
+                    <div className="badge-grid">
+                      {v.VentaItems?.map((item) => (
+                        <span key={item.id} className="badge">
+                          {item.cantidad}x {item.Producto?.nombre}
+                        </span>
+                      ))}
+                    </div>
                   </td>
                   <td>
                     {v.pago_dividido && v.VentaPagos ? (

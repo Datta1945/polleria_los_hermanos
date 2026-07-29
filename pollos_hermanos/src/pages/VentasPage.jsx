@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
-import { productosAPI, ventasAPI, clientesAPI, salidasAPI } from "../api";
-import { generarComprobantePDF } from "../utils/generarPDF";
+import { productosAPI, ventasAPI, clientesAPI, salidasAPI, bancosAPI } from "../api";
+import BancoAutocomplete from "../components/BancoAutocomplete";
 
 export default function VentasPage() {
   const { user } = useAuth();
@@ -13,7 +13,7 @@ export default function VentasPage() {
   const [busqueda, setBusqueda] = useState("");
   const [cantidades, setCantidades] = useState({});
   const [form, setForm] = useState({
-    tipo_venta: "local",
+    tipo_venta: user?.role === "repartidor" ? "reparto" : "local",
     clienteId: "",
     medio_pago: "efectivo",
     notas: "",
@@ -28,6 +28,10 @@ export default function VentasPage() {
   const [camionesActivos, setCamionesActivos] = useState([]);
   const [camionSeleccionado, setCamionSeleccionado] = useState("");
   const [stockCamion, setStockCamion] = useState([]);
+  const [stockLoading, setStockLoading] = useState(false);
+  const [datosTransferencia, setDatosTransferencia] = useState([]);
+  const [datosTarjeta, setDatosTarjeta] = useState([]);
+  const [bancos, setBancos] = useState([]);
 
   useEffect(() => {
     productosAPI.getAll().then((res) => {
@@ -37,6 +41,7 @@ export default function VentasPage() {
       setCantidades(init);
     }).catch(console.error);
     clientesAPI.getAll().then((res) => setClientes(res.data)).catch(console.error);
+    bancosAPI.getAll().then((res) => setBancos(res.data.map((b) => b.nombre))).catch(console.error);
     if (form.tipo_venta === "reparto") {
       salidasAPI.getCamionesActivos().then((res) => {
         setCamionesActivos(res.data);
@@ -51,12 +56,13 @@ export default function VentasPage() {
 
   useEffect(() => {
     if (camionSeleccionado && form.tipo_venta === "reparto") {
+      setStockLoading(true);
       salidasAPI.getStockCamion(camionSeleccionado).then((res) => {
         setStockCamion(res.data.items);
         const init = {};
         res.data.items.forEach((item) => { init[item.productoId] = 0; });
         setCantidades(init);
-      }).catch(console.error);
+      }).catch(console.error).finally(() => setStockLoading(false));
     } else {
       setStockCamion([]);
     }
@@ -79,6 +85,11 @@ export default function VentasPage() {
         }).catch(console.error);
       }
     }
+    if (name === "medio_pago" && !pagoDividido) {
+      const now = new Date().toISOString().slice(0, 16);
+      setDatosTransferencia(value === "transferencia" ? [{ nombre_cuenta: "", fecha_hora: now, banco: "", monto: "" }] : []);
+      setDatosTarjeta(value === "tarjeta" ? [{ nombre_cuenta: "", fecha_hora: now, banco: "", monto: "" }] : []);
+    }
   };
 
   const toggleCantidad = (productoId, delta) => {
@@ -98,20 +109,122 @@ export default function VentasPage() {
     const newPagos = [...pagos];
     newPagos[index][e.target.name] = e.target.value;
     setPagos(newPagos);
+    if (e.target.name === "medio_pago") {
+      newPagos[index].monto = 0;
+      const now = new Date().toISOString().slice(0, 16);
+      const newDatosT = [...datosTransferencia];
+      const newDatosJ = [...datosTarjeta];
+      if (e.target.value === "transferencia") {
+        newDatosT[index] = { nombre_cuenta: "", fecha_hora: now, banco: "", monto: "0" };
+      } else {
+        newDatosT[index] = null;
+      }
+      if (e.target.value === "tarjeta") {
+        newDatosJ[index] = { nombre_cuenta: "", fecha_hora: now, banco: "", monto: "0" };
+      } else {
+        newDatosJ[index] = null;
+      }
+      setDatosTransferencia(newDatosT);
+      setDatosTarjeta(newDatosJ);
+    } else if (e.target.name === "monto") {
+      const newDatosT = [...datosTransferencia];
+      const newDatosJ = [...datosTarjeta];
+      if (newPagos[index].medio_pago === "transferencia" && newDatosT[index]) {
+        newDatosT[index] = { ...newDatosT[index], monto: e.target.value };
+        setDatosTransferencia(newDatosT);
+      } else if (newPagos[index].medio_pago === "tarjeta" && newDatosJ[index]) {
+        newDatosJ[index] = { ...newDatosJ[index], monto: e.target.value };
+        setDatosTarjeta(newDatosJ);
+      }
+    }
   };
 
   const addPago = () => {
     setPagos([...pagos, { medio_pago: "efectivo", monto: 0 }]);
+    setDatosTransferencia([...datosTransferencia, null]);
+    setDatosTarjeta([...datosTarjeta, null]);
   };
 
   const removePago = (index) => {
     if (pagos.length > 1) {
       setPagos(pagos.filter((_, i) => i !== index));
+      setDatosTransferencia(datosTransferencia.filter((_, i) => i !== index));
+      setDatosTarjeta(datosTarjeta.filter((_, i) => i !== index));
     }
   };
 
   const esReparto = form.tipo_venta === "reparto";
-  const productosBase = esReparto && stockCamion.length > 0
+  const esRepartidor = user?.role === "repartidor";
+
+  const esTransferencia = !pagoDividido
+    ? form.medio_pago === "transferencia"
+    : pagos.some((p) => p.medio_pago === "transferencia");
+
+  const esTarjeta = !pagoDividido
+    ? form.medio_pago === "tarjeta"
+    : pagos.some((p) => p.medio_pago === "tarjeta");
+
+  const transferenciaIndices = !pagoDividido
+    ? (form.medio_pago === "transferencia" ? [0] : [])
+    : pagos.reduce((acc, p, i) => (p.medio_pago === "transferencia" ? [...acc, i] : acc), []);
+
+  const tarjetaIndices = !pagoDividido
+    ? (form.medio_pago === "tarjeta" ? [0] : [])
+    : pagos.reduce((acc, p, i) => (p.medio_pago === "tarjeta" ? [...acc, i] : acc), []);
+
+  const transferenciaCount = transferenciaIndices.length;
+  const tarjetaCount = tarjetaIndices.length;
+
+  const isDatosBancariosCompleto = (datos) => {
+    return datos && datos.nombre_cuenta.trim() && datos.fecha_hora && datos.banco.trim() && datos.monto;
+  };
+
+  const totalTransferenciasCompletas = datosTransferencia
+    .filter((d) => isDatosBancariosCompleto(d))
+    .reduce((sum, d) => sum + (parseFloat(d.monto) || 0), 0);
+
+  const totalTarjetasCompletas = datosTarjeta
+    .filter((d) => isDatosBancariosCompleto(d))
+    .reduce((sum, d) => sum + (parseFloat(d.monto) || 0), 0);
+
+  const handleDatosTransferenciaChange = (index, e) => {
+    const newDatos = [...datosTransferencia];
+    newDatos[index] = { ...newDatos[index], [e.target.name]: e.target.value };
+    setDatosTransferencia(newDatos);
+    if (e.target.name === "monto" && pagoDividido && pagos[index]?.medio_pago === "transferencia") {
+      const newPagos = [...pagos];
+      newPagos[index] = { ...newPagos[index], monto: e.target.value };
+      setPagos(newPagos);
+    }
+  };
+
+  const handleDatosTarjetaChange = (index, e) => {
+    const newDatos = [...datosTarjeta];
+    newDatos[index] = { ...newDatos[index], [e.target.name]: e.target.value };
+    setDatosTarjeta(newDatos);
+    if (e.target.name === "monto" && pagoDividido && pagos[index]?.medio_pago === "tarjeta") {
+      const newPagos = [...pagos];
+      newPagos[index] = { ...newPagos[index], monto: e.target.value };
+      setPagos(newPagos);
+    }
+  };
+
+  const handleDatoBancarioRapido = (tipo, index, campo, valor) => {
+    const setDatos = tipo === "transferencia" ? setDatosTransferencia : setDatosTarjeta;
+    const datos = tipo === "transferencia" ? datosTransferencia : datosTarjeta;
+    const newDatos = [...datos];
+    newDatos[index] = { ...newDatos[index], [campo]: valor };
+    if (newDatos[index].nombre_cuenta && newDatos[index].banco && !newDatos[index].fecha_hora) {
+      newDatos[index] = { ...newDatos[index], fecha_hora: new Date().toISOString().slice(0, 16) };
+    }
+    if (pagoDividido && pagos[index]) {
+      newDatos[index] = { ...newDatos[index], monto: String(pagos[index].monto || 0) };
+    } else {
+      newDatos[index] = { ...newDatos[index], monto: String(subtotal || 0) };
+    }
+    setDatos(newDatos);
+  };
+  const productosBase = esReparto
     ? stockCamion.map((sc) => ({
         id: sc.productoId,
         nombre: sc.nombre,
@@ -192,8 +305,10 @@ export default function VentasPage() {
       setPagos([{ medio_pago: "efectivo", monto: 0 }]);
     } else {
       setPagoDividido(true);
-      setPagos([{ medio_pago: "efectivo", monto: subtotal }]);
+      setPagos([{ medio_pago: "efectivo", monto: 0 }]);
     }
+    setDatosTransferencia([]);
+    setDatosTarjeta([]);
   };
 
   const handleSubmit = async (e) => {
@@ -217,6 +332,18 @@ export default function VentasPage() {
     if (pagoDividido && !sumaPagosValida) {
       alert(`La suma de los pagos ($${totalPagosDivididos.toFixed(2)}) no coincide con el total ($${totalConDeuda.toFixed(2)})`);
       return;
+    }
+    for (let i = 0; i < transferenciaIndices.length; i++) {
+      if (!isDatosBancariosCompleto(datosTransferencia[transferenciaIndices[i]])) {
+        alert(`Debe completar todos los campos del formulario de Transferencia ${i + 1}`);
+        return;
+      }
+    }
+    for (let i = 0; i < tarjetaIndices.length; i++) {
+      if (!isDatosBancariosCompleto(datosTarjeta[tarjetaIndices[i]])) {
+        alert(`Debe completar todos los campos del formulario de Tarjeta ${i + 1}`);
+        return;
+      }
     }
     setLoading(true);
     try {
@@ -243,25 +370,55 @@ export default function VentasPage() {
           monto: parseFloat(p.monto) || 0,
         }));
       }
+      if (esTransferencia) {
+        data.datos_transferencia = datosTransferencia
+          .filter((d) => isDatosBancariosCompleto(d))
+          .map((d) => ({
+            nombre_cuenta: d.nombre_cuenta,
+            fecha_hora: d.fecha_hora,
+            banco: d.banco,
+            monto: parseFloat(d.monto) || 0,
+          }));
+      }
+      if (esTarjeta) {
+        data.datos_tarjeta = datosTarjeta
+          .filter((d) => isDatosBancariosCompleto(d))
+          .map((d) => ({
+            nombre_cuenta: d.nombre_cuenta,
+            fecha_hora: d.fecha_hora,
+            banco: d.banco,
+            monto: parseFloat(d.monto) || 0,
+          }));
+      }
       const res = await ventasAPI.create(data);
       const ventaGuardada = res.data.venta;
       setUltimaVenta(ventaGuardada);
       setSuccess(true);
 
-      generarComprobantePDF(ventaGuardada);
-
       setForm({
-        tipo_venta: "local",
+        tipo_venta: esRepartidor ? "reparto" : "local",
         clienteId: "",
         medio_pago: "efectivo",
         notas: "",
       });
       setPagoDividido(false);
       setPagos([{ medio_pago: "efectivo", monto: 0 }]);
+      setDatosTransferencia([]);
+      setDatosTarjeta([]);
       setPagarDeuda(false);
       setCamionSeleccionado("");
       setStockCamion([]);
       setBusqueda("");
+
+      if (esRepartidor) {
+        const camionesRes = await salidasAPI.getCamionesActivos();
+        setCamionesActivos(camionesRes.data);
+        if (camionesRes.data.length > 0) {
+          const enCamino = camionesRes.data.find((c) => c.estado === "en_camino");
+          const primero = enCamino || camionesRes.data[0];
+          setCamionSeleccionado(String(primero.id));
+        }
+      }
 
       const [productosRes, clientesRes] = await Promise.all([
         productosAPI.getAll(),
@@ -314,12 +471,93 @@ export default function VentasPage() {
 
       <form onSubmit={handleSubmit}>
         <div className="form-card">
+          <h3>Productos</h3>
+
+          {esReparto && !camionSeleccionado && (
+            <p className="empty" style={{ marginBottom: "1rem" }}>
+              Seleccione un camion para ver y seleccionar productos
+            </p>
+          )}
+
+          {esReparto && camionSeleccionado && stockLoading && (
+            <p className="empty" style={{ marginBottom: "1rem" }}>
+              Cargando stock del camion...
+            </p>
+          )}
+
+          <div className="producto-search">
+            <input
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              placeholder="Buscar producto..."
+              disabled={esReparto && !camionSeleccionado}
+            />
+          </div>
+
+          {productosFiltrados.length === 0 ? (
+            <p className="empty">{esReparto && !camionSeleccionado ? "Seleccione un camion primero" : "No se encontraron productos"}</p>
+          ) : (
+            <div className="producto-grid">
+              {productosFiltrados.map((p) => {
+                const qty = cantidades[p.id] || 0;
+                const seleccionado = qty > 0;
+                return (
+                  <div
+                    key={p.id}
+                    className={`producto-card ${seleccionado ? "selected" : ""}`}
+                  >
+                    <div className="producto-card-name">{p.nombre}</div>
+                    <div className="producto-card-price">${p.precio}</div>
+                    <div className={`producto-card-stock ${p.stock <= (p.stock_minimo || 10) ? "bajo" : ""}`}>
+                      Stock: {p.stock}
+                      {esReparto && p.devuelto > 0 && (
+                        <span style={{ color: "#e74c3c", fontSize: "0.75rem", marginLeft: "0.25rem" }}>
+                          (devuelto: {p.devuelto})
+                        </span>
+                      )}
+                    </div>
+                    <div className="producto-card-qty">
+                      <button
+                        type="button"
+                        onClick={() => toggleCantidad(p.id, -1)}
+                        disabled={qty === 0 || (esReparto && !camionSeleccionado)}
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        value={qty}
+                        min="0"
+                        max={getStockMax(p.id)}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value) || 0;
+                          const clamped = Math.max(0, Math.min(val, getStockMax(p.id)));
+                          setCantidades((prev) => ({ ...prev, [p.id]: clamped }));
+                        }}
+                        disabled={esReparto && !camionSeleccionado}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => toggleCantidad(p.id, 1)}
+                        disabled={qty >= getStockMax(p.id) || (esReparto && !camionSeleccionado)}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="form-card">
           <h3>Datos de la Venta</h3>
           <div className="form-row">
             <div className="form-group">
               <label>Tipo de Venta *</label>
-              <select name="tipo_venta" value={form.tipo_venta} onChange={handleChange} required>
-                <option value="local">Venta de Local</option>
+              <select name="tipo_venta" value={form.tipo_venta} onChange={handleChange} required disabled={esRepartidor}>
+                <option value="local">Venta Mayorista</option>
                 <option value="reparto">Venta por Reparto</option>
               </select>
             </div>
@@ -415,45 +653,113 @@ export default function VentasPage() {
           {pagoDividido && (
             <div className="form-card" style={{ marginTop: "0.5rem" }}>
               <h3>Medios de Pago</h3>
-              {pagos.map((pago, index) => (
-                <div key={index} className="item-row">
-                  <select
-                    name="medio_pago"
-                    value={pago.medio_pago}
-                    onChange={(e) => handlePagoChange(index, e)}
-                    required
-                  >
-                    <option value="efectivo">Efectivo</option>
-                    <option value="transferencia">Transferencia</option>
-                    <option value="tarjeta">Tarjeta</option>
-                    <option value="cuenta_corriente">Cuenta Corriente</option>
-                    <option value="otro">Otro</option>
-                  </select>
-                  <input
-                    type="number"
-                    name="monto"
-                    value={pago.monto}
-                    onChange={(e) => handlePagoChange(index, e)}
-                    min="0"
-                    step="0.01"
-                    placeholder="Monto"
-                    required
-                  />
-                  {pagos.length > 1 && (
-                    <button type="button" className="btn btn-sm btn-cancel" onClick={() => removePago(index)}>X</button>
+              {pagos.map((pago, index) => {
+                const esTrans = pago.medio_pago === "transferencia";
+                const esTarj = pago.medio_pago === "tarjeta";
+                return (
+                <div key={index} style={{ marginBottom: "0.75rem" }}>
+                  <div className="item-row">
+                    <select
+                      name="medio_pago"
+                      value={pago.medio_pago}
+                      onChange={(e) => handlePagoChange(index, e)}
+                      required
+                    >
+                      <option value="efectivo">Efectivo</option>
+                      <option value="transferencia">Transferencia</option>
+                      <option value="tarjeta">Tarjeta</option>
+                      <option value="cuenta_corriente">Cuenta Corriente</option>
+                      <option value="otro">Otro</option>
+                    </select>
+                    <input
+                      type="number"
+                      name="monto"
+                      value={pago.monto}
+                      onChange={(e) => handlePagoChange(index, e)}
+                      min="0"
+                      step="0.01"
+                      placeholder="Monto"
+                      required
+                    />
+                    {pagos.length > 1 && (
+                      <button type="button" className="btn btn-sm btn-cancel" onClick={() => removePago(index)}>X</button>
+                    )}
+                  </div>
+                  {esTrans && (
+                    <div className="pago-detalle-row" style={{ display: "flex", gap: "0.5rem", marginTop: "0.4rem", padding: "0.4rem", background: "#f0f7ff", borderRadius: "6px", borderLeft: "3px solid #3498db" }}>
+                      <input
+                        value={datosTransferencia[index]?.nombre_cuenta || ""}
+                        onChange={(e) => handleDatoBancarioRapido("transferencia", index, "nombre_cuenta", e.target.value)}
+                        placeholder="Nombre de la cuenta"
+                        style={{ flex: 1, padding: "4px 8px", fontSize: "0.85rem" }}
+                      />
+                      <BancoAutocomplete
+                        value={datosTransferencia[index]?.banco || ""}
+                        onChange={(val) => handleDatoBancarioRapido("transferencia", index, "banco", val)}
+                        bancos={bancos}
+                        onAddBanco={(v) => {
+                          if (!bancos.includes(v)) {
+                            bancosAPI.create({ nombre: v }).then(() => {
+                              setBancos(prev => [...prev, v]);
+                            }).catch(console.error);
+                          }
+                        }}
+                        exclude={[
+                          ...datosTransferencia.filter((_, idx) => idx !== index).filter(Boolean).map(d => d.banco).filter(Boolean),
+                          ...datosTarjeta.filter(Boolean).map(d => d.banco).filter(Boolean),
+                        ]}
+                      />
+                    </div>
+                  )}
+                  {esTarj && (
+                    <div className="pago-detalle-row" style={{ display: "flex", gap: "0.5rem", marginTop: "0.4rem", padding: "0.4rem", background: "#f5f0ff", borderRadius: "6px", borderLeft: "3px solid #9b59b6" }}>
+                      <input
+                        value={datosTarjeta[index]?.nombre_cuenta || ""}
+                        onChange={(e) => handleDatoBancarioRapido("tarjeta", index, "nombre_cuenta", e.target.value)}
+                        placeholder="Nombre de la cuenta"
+                        style={{ flex: 1, padding: "4px 8px", fontSize: "0.85rem" }}
+                      />
+                      <BancoAutocomplete
+                        value={datosTarjeta[index]?.banco || ""}
+                        onChange={(val) => handleDatoBancarioRapido("tarjeta", index, "banco", val)}
+                        bancos={bancos}
+                        onAddBanco={(v) => {
+                          if (!bancos.includes(v)) {
+                            bancosAPI.create({ nombre: v }).then(() => {
+                              setBancos(prev => [...prev, v]);
+                            }).catch(console.error);
+                          }
+                        }}
+                        exclude={[
+                          ...datosTransferencia.filter(Boolean).map(d => d.banco).filter(Boolean),
+                          ...datosTarjeta.filter((_, idx) => idx !== index).filter(Boolean).map(d => d.banco).filter(Boolean),
+                        ]}
+                      />
+                    </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
               <button type="button" className="btn btn-secondary" onClick={addPago}>+ Agregar Medio de Pago</button>
               <div className="resumen-row" style={{ marginTop: "0.5rem" }}>
-                <span>Suma de pagos:</span>
+                <span>{totalPagosDivididos >= totalConDeuda ? "Sobrante:" : "Falta:"}</span>
                 <strong className={sumaPagosValida ? "monto-regreso" : "monto-salida"}>
-                  ${totalPagosDivididos.toFixed(2)}
+                  ${totalPagosDivididos >= totalConDeuda ? (totalPagosDivididos - totalConDeuda).toFixed(2) : Math.max(0, totalConDeuda - totalPagosDivididos).toFixed(2)}
                 </strong>
               </div>
-              {!sumaPagosValida && (
+              {sumaPagosValida && totalPagosDivididos === totalConDeuda && (
+                <div style={{ marginTop: "0.25rem", color: "#27ae60", fontWeight: "bold", fontSize: "0.9rem" }}>
+                  ✓ Total completado
+                </div>
+              )}
+              {totalPagosDivididos > totalConDeuda && (
+                <div style={{ marginTop: "0.25rem", color: "#e67e22", fontWeight: "bold", fontSize: "0.9rem" }}>
+                  Hay un sobrante de ${(totalPagosDivididos - totalConDeuda).toFixed(2)}
+                </div>
+              )}
+              {!sumaPagosValida && totalPagosDivididos < totalConDeuda && (
                 <div className="error-msg" style={{ marginTop: "0.25rem" }}>
-                  La suma debe ser exactamente ${totalConDeuda.toFixed(2)}
+                  Falta agregar ${Math.abs(totalConDeuda - totalPagosDivididos).toFixed(2)}
                 </div>
               )}
             </div>
@@ -468,68 +774,52 @@ export default function VentasPage() {
               placeholder="Observaciones"
             />
           </div>
-        </div>
 
-        <div className="form-card">
-          <h3>Productos</h3>
-
-          {esReparto && !camionSeleccionado && (
-            <p className="empty" style={{ marginBottom: "1rem" }}>
-              Seleccione un camion para ver y seleccionar productos
-            </p>
+          {esTransferencia && !pagoDividido && (
+            <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", padding: "0.5rem", background: "#f0f7ff", borderRadius: "6px", borderLeft: "3px solid #3498db" }}>
+              <input
+                value={datosTransferencia[0]?.nombre_cuenta || ""}
+                onChange={(e) => handleDatoBancarioRapido("transferencia", 0, "nombre_cuenta", e.target.value)}
+                placeholder="Nombre de la cuenta"
+                style={{ flex: 1, padding: "4px 8px", fontSize: "0.85rem" }}
+              />
+              <BancoAutocomplete
+                value={datosTransferencia[0]?.banco || ""}
+                onChange={(val) => handleDatoBancarioRapido("transferencia", 0, "banco", val)}
+                bancos={bancos}
+                onAddBanco={(v) => {
+                  if (!bancos.includes(v)) {
+                    bancosAPI.create({ nombre: v }).then(() => {
+                      setBancos(prev => [...prev, v]);
+                    }).catch(console.error);
+                  }
+                }}
+                exclude={datosTarjeta.filter(Boolean).map(d => d.banco).filter(Boolean)}
+              />
+            </div>
           )}
 
-          <div className="producto-search">
-            <input
-              value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
-              placeholder="Buscar producto..."
-              disabled={esReparto && !camionSeleccionado}
-            />
-          </div>
-
-          {productosFiltrados.length === 0 ? (
-            <p className="empty">{esReparto && !camionSeleccionado ? "Seleccione un camion primero" : "No se encontraron productos"}</p>
-          ) : (
-            <div className="producto-grid">
-              {productosFiltrados.map((p) => {
-                const qty = cantidades[p.id] || 0;
-                const seleccionado = qty > 0;
-                return (
-                  <div
-                    key={p.id}
-                    className={`producto-card ${seleccionado ? "selected" : ""}`}
-                  >
-                    <div className="producto-card-name">{p.nombre}</div>
-                    <div className="producto-card-price">${p.precio}</div>
-                    <div className={`producto-card-stock ${p.stock <= (p.stock_minimo || 10) ? "bajo" : ""}`}>
-                      Stock: {p.stock}
-                      {esReparto && p.devuelto > 0 && (
-                        <span style={{ color: "#e74c3c", fontSize: "0.75rem", marginLeft: "0.25rem" }}>
-                          (devuelto: {p.devuelto})
-                        </span>
-                      )}
-                    </div>
-                    <div className="producto-card-qty">
-                      <button
-                        type="button"
-                        onClick={() => toggleCantidad(p.id, -1)}
-                        disabled={qty === 0 || (esReparto && !camionSeleccionado)}
-                      >
-                        -
-                      </button>
-                      <span>{qty}</span>
-                      <button
-                        type="button"
-                        onClick={() => toggleCantidad(p.id, 1)}
-                        disabled={qty >= getStockMax(p.id) || (esReparto && !camionSeleccionado)}
-                      >
-                        +
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+          {esTarjeta && !pagoDividido && (
+            <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", padding: "0.5rem", background: "#f5f0ff", borderRadius: "6px", borderLeft: "3px solid #9b59b6" }}>
+              <input
+                value={datosTarjeta[0]?.nombre_cuenta || ""}
+                onChange={(e) => handleDatoBancarioRapido("tarjeta", 0, "nombre_cuenta", e.target.value)}
+                placeholder="Nombre de la cuenta"
+                style={{ flex: 1, padding: "4px 8px", fontSize: "0.85rem" }}
+              />
+              <BancoAutocomplete
+                value={datosTarjeta[0]?.banco || ""}
+                onChange={(val) => handleDatoBancarioRapido("tarjeta", 0, "banco", val)}
+                bancos={bancos}
+                onAddBanco={(v) => {
+                  if (!bancos.includes(v)) {
+                    bancosAPI.create({ nombre: v }).then(() => {
+                      setBancos(prev => [...prev, v]);
+                    }).catch(console.error);
+                  }
+                }}
+                exclude={datosTransferencia.filter(Boolean).map(d => d.banco).filter(Boolean)}
+              />
             </div>
           )}
         </div>

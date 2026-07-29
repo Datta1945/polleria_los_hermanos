@@ -152,6 +152,8 @@ body {
 .btn-camino { background: var(--info); color: white; }
 .btn-entregado { background: var(--success); color: white; }
 .btn-cancel { background: var(--danger); color: white; }
+.btn-cierre-pdf { background: #d97706; color: white; }
+.btn-cierre-pdf:hover { background: #b45309; }
 
 /* Forms */
 .form-group {
@@ -435,6 +437,10 @@ h2 {
 }
 
 /* Monto columns */
+.hide-col {
+  display: none;
+}
+
 .monto-salida {
   color: var(--info);
 }
@@ -729,23 +735,99 @@ h2 {
   margin-top: 0.5rem;
 }
 
-/* Responsive nav */
+/* Hamburger */
+.hamburger {
+  display: none;
+  flex-direction: column;
+  gap: 5px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.hamburger-line {
+  width: 24px;
+  height: 2.5px;
+  background: var(--text);
+  border-radius: 2px;
+  transition: all 0.3s;
+}
+
+.hamburger-line.open:nth-child(1) {
+  transform: rotate(45deg) translate(5px, 5px);
+}
+
+.hamburger-line.open:nth-child(2) {
+  opacity: 0;
+}
+
+.hamburger-line.open:nth-child(3) {
+  transform: rotate(-45deg) translate(5px, -5px);
+}
+
+.nav-links-footer {
+  display: none;
+}
+
+.user-info-mobile {
+  display: none;
+}
+
+.btn-logout-mobile {
+  display: none;
+}
 @media (max-width: 900px) {
   .navbar {
     flex-wrap: wrap;
     gap: 0.5rem;
     padding: 0.5rem 1rem;
+    position: relative;
+  }
+  .hamburger {
+    display: flex;
   }
   .nav-links {
+    display: none;
     order: 3;
     width: 100%;
-    overflow-x: auto;
-    flex-wrap: nowrap;
+    flex-direction: column;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.5rem;
+    gap: 2px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  }
+  .nav-links.nav-links-open {
+    display: flex;
   }
   .nav-link {
     white-space: nowrap;
+    font-size: 0.85rem;
+    padding: 0.6rem 0.8rem;
+    border-radius: 6px;
+  }
+  .nav-links-footer {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    border-top: 1px solid var(--border);
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+  }
+  .user-info-mobile {
+    display: block;
     font-size: 0.8rem;
-    padding: 0.4rem 0.7rem;
+    color: var(--text-muted);
+    text-align: center;
+  }
+  .btn-logout-mobile {
+    display: block;
+    width: 100%;
+  }
+  .nav-user {
+    display: none;
   }
   .producto-grid {
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
@@ -843,33 +925,74 @@ h2 {
   color: var(--danger);
 }
 
+/* Hide number input spinners */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 .producto-card-qty {
-  margin-top: 0.5rem;
+  margin-top: 0.6rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
+  gap: 0.5rem;
 }
 
 .producto-card-qty button {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--bg-card);
   color: var(--text);
   cursor: pointer;
-  font-size: 1rem;
+  font-size: 1.1rem;
+  font-weight: 600;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.15s;
+  line-height: 1;
+  padding: 0;
 }
 
-.producto-card-qty button:hover {
+.producto-card-qty button:hover:not(:disabled) {
   background: var(--primary);
   border-color: var(--primary);
   color: white;
+}
+
+.producto-card-qty button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.producto-card-qty input[type="number"] {
+  width: 48px;
+  height: 32px;
+  text-align: center;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-input);
+  color: var(--text);
+  padding: 0;
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+
+.producto-card-qty input[type="number"]:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(74, 107, 90, 0.15);
 }
 
 .producto-card-qty span {
@@ -1076,4 +1199,174 @@ h2 {
 .camion-estado-sobrante {
   background: var(--danger);
   color: white;
+}
+
+/* ========== RESPONSIVE DASHBOARD ========== */
+.badge-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3px;
+}
+
+.modal-responsive {
+  max-width: 360px;
+}
+
+@media (max-width: 768px) {
+  .stats-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+  }
+  .stat-card {
+    padding: 0.8rem;
+  }
+  .stat-card h3 {
+    font-size: 1.4rem;
+  }
+  .cierre-2col {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  .camion-seccion-2col {
+    grid-template-columns: 1fr;
+  }
+  .camion-detalle-col:first-child {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .cierre-grid {
+    grid-template-columns: 1fr;
+  }
+  .resumen-grid {
+    grid-template-columns: 1fr;
+  }
+  .resumen-item-total {
+    grid-column: span 1;
+  }
+  .modal-card {
+    max-width: 92vw;
+    padding: 1.2rem;
+    margin: 1rem;
+  }
+  .modal-wide {
+    max-width: 92vw;
+  }
+  .table-container {
+    border-radius: 8px;
+  }
+  table {
+    font-size: 0.78rem;
+  }
+  th, td {
+    padding: 0.5rem 0.6rem;
+    white-space: nowrap;
+  }
+  .section h3 {
+    font-size: 1rem;
+  }
+  .cc-resumen {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+  .tabs-container {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    gap: 0;
+  }
+  .tab-btn {
+    font-size: 0.8rem;
+    padding: 0.5rem 0.8rem;
+    white-space: nowrap;
+  }
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+  .filtros-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .filtros-btns {
+    grid-column: span 2;
+  }
+  .item-row {
+    flex-wrap: wrap;
+  }
+  .item-row select {
+    flex: 1 1 100%;
+  }
+  .item-row input[type="number"] {
+    flex: 1 1 60%;
+  }
+  .item-row .btn-cancel {
+    flex: 0 0 auto;
+  }
+  .pago-detalle-row {
+    flex-direction: column;
+    gap: 0.4rem !important;
+  }
+  .pago-detalle-row input {
+    width: 100%;
+  }
+  .detalle-scroll-container {
+    max-height: 180px;
+  }
+  .camion-operacion-header {
+    font-size: 0.7rem;
+  }
+  .detalle-scroll-container td {
+    font-size: 0.72rem;
+    padding: 0.25rem 0.3rem;
+  }
+  .detalle-scroll-container thead th {
+    font-size: 0.68rem;
+    padding: 0.3rem 0.3rem;
+  }
+  .input-cantidad {
+    width: 50px;
+    font-size: 0.8rem;
+    padding: 0.3rem;
+  }
+  .action-buttons {
+    flex-direction: column;
+    gap: 2px;
+  }
+  .action-buttons .btn-sm {
+    font-size: 0.7rem;
+    padding: 0.25rem 0.5rem;
+    width: 100%;
+  }
+  .badge-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .main-content {
+    padding: 0 0.8rem;
+    margin: 1rem auto;
+  }
+  h2 {
+    font-size: 1.2rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .stats-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.4rem;
+  }
+  .stat-card {
+    padding: 0.6rem;
+  }
+  .stat-card h3 {
+    font-size: 1.1rem;
+  }
+  .stat-card p {
+    font-size: 0.7rem;
+  }
+  .filtros-grid {
+    grid-template-columns: 1fr;
+  }
+  .filtros-btns {
+    grid-column: span 1;
+  }
+  .modal-card {
+    padding: 1rem;
+  }
 }

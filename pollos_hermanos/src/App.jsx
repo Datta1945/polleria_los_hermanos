@@ -14,10 +14,12 @@ import UsuariosPage from "./pages/UsuariosPage";
 import ProveedoresPage from "./pages/ProveedoresPage";
 import ProductosPage from "./pages/ProductosPage";
 
-function PrivateRoute({ children }) {
+function PrivateRoute({ children, allowedRoles }) {
   const { user, loading } = useAuth();
   if (loading) return <div className="loading">Cargando...</div>;
-  return user ? children : <Navigate to="/login" />;
+  if (!user) return <Navigate to="/login" />;
+  if (allowedRoles && !allowedRoles.includes(user.role)) return <Navigate to="/" />;
+  return children;
 }
 
 function PublicRoute({ children }) {
@@ -65,7 +67,7 @@ function AppRoutes() {
       } />
 
       <Route path="/clientes" element={
-        <PrivateRoute>
+        <PrivateRoute allowedRoles={["admin", "operador"]}>
           <div className="app">
             <Navbar />
             <main className="main-content"><ClientesPage /></main>

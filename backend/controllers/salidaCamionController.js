@@ -285,6 +285,13 @@ export const updateSalidaStatus = async (req, res) => {
       }
     }
 
+    if (estado === "entregado") {
+      const ventasCount = await Venta.count({ where: { salidaCamionId: salida.id } });
+      if (ventasCount === 0) {
+        return res.status(400).json({ message: "Debe registrar al menos una Venta por Reparto antes de marcar como entregado" });
+      }
+    }
+
     const updateData = { estado, notas: notas !== undefined ? notas : salida.notas };
 
     await salida.update(updateData);
@@ -463,10 +470,9 @@ export const getSalidasStats = async (req, res) => {
 
 export const getCamionesActivos = async (req, res) => {
   try {
-    const where = { estado: { [Op.in]: ["en_camino", "entregado", "sobrante"] } };
+    const where = { estado: "en_camino" };
     if (req.userRole === "repartidor") {
       where.asignadoRepartidorId = req.user.id;
-      where.estado = "en_camino";
     }
     const salidas = await SalidaCamion.findAll({
       where,
