@@ -61,6 +61,32 @@ export const updateProducto = async (req, res) => {
   }
 };
 
+export const actualizarPreciosPorcentaje = async (req, res) => {
+  try {
+    const { porcentaje } = req.body;
+
+    if (porcentaje === undefined || porcentaje === null || isNaN(porcentaje)) {
+      return res.status(400).json({ message: "Debe enviar un porcentaje válido" });
+    }
+
+    const factor = 1 + porcentaje / 100;
+    const productos = await Producto.findAll({ where: { activo: true } });
+    let actualizados = 0;
+
+    for (const producto of productos) {
+      const nuevoPrecio = Math.round(producto.precio * factor * 100) / 100;
+      if (nuevoPrecio > 0) {
+        await producto.update({ precio: nuevoPrecio });
+        actualizados++;
+      }
+    }
+
+    res.json({ message: `Precios actualizados: ${actualizados} productos`, cantidad: actualizados });
+  } catch (error) {
+    res.status(500).json({ message: "Error al actualizar precios", error: error.message });
+  }
+};
+
 export const deleteProducto = async (req, res) => {
   try {
     const producto = await Producto.findByPk(req.params.id);

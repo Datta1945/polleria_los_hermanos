@@ -109,25 +109,19 @@ export default function HistorialVentasPage() {
           <table>
             <thead>
               <tr>
-                <th className="hide-col">Nro</th>
                 <th>Fecha</th>
-                <th>Hora</th>
                 <th>Tipo</th>
                 <th>Camion</th>
                 <th>Cliente</th>
-                <th>Productos</th>
-                <th>Medio Pago</th>
-                <th>Total</th>
                 <th>Vendedor</th>
                 <th>Acciones</th>
+                <th>Mercaderías</th>
               </tr>
             </thead>
             <tbody>
               {ventas.map((v) => (
                 <tr key={v.id}>
-                  <td className="hide-col"><strong>{v.numero_comprobante}</strong></td>
                   <td>{v.fecha}</td>
-                  <td>{v.hora}</td>
                   <td>
                     <span className={`badge badge-${v.tipo_venta}`}>
                       {v.tipo_venta === "local" ? "Local" : "Reparto"}
@@ -135,25 +129,6 @@ export default function HistorialVentasPage() {
                   </td>
                   <td>{v.salida_camion?.camion || "-"}</td>
                   <td>{v.cliente?.nombre || v.cliente_nombre}</td>
-                  <td>
-                    <div className="badge-grid">
-                      {v.VentaItems?.map((item) => (
-                        <span key={item.id} className="badge">
-                          {item.cantidad}x {item.Producto?.nombre}
-                        </span>
-                      ))}
-                    </div>
-                  </td>
-                  <td>
-                    {v.pago_dividido && v.VentaPagos ? (
-                      <span title={v.VentaPagos.map((p) => `${p.medio_pago}: $${parseFloat(p.monto).toFixed(2)}`).join(", ")}>
-                        Dividido
-                      </span>
-                    ) : (
-                      medioPagoLabels[v.medio_pago] || v.medio_pago
-                    )}
-                  </td>
-                  <td><strong className="monto-ventas">${v.total}</strong></td>
                   <td>{v.vendedor?.nombre || "-"}</td>
                   <td>
                     <div className="action-buttons">
@@ -171,6 +146,15 @@ export default function HistorialVentasPage() {
                           Eliminar
                         </button>
                       )}
+                    </div>
+                  </td>
+                  <td>
+                    <div className="badge-grid">
+                      {v.VentaItems?.map((item) => (
+                        <span key={item.id} className="badge">
+                          {item.cantidad}x {item.Producto?.nombre}
+                        </span>
+                      ))}
                     </div>
                   </td>
                 </tr>

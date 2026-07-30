@@ -70,6 +70,18 @@ const start = async () => {
       console.log("Columna monto_deuda_pagado agregada a Venta");
     }
 
+    const [proveedorCols] = await sequelize.query("PRAGMA table_info(Proveedors)");
+    const hasMercaderias = proveedorCols.some((c) => c.name === "mercaderias_compradas");
+    if (!hasMercaderias) {
+      await sequelize.query("ALTER TABLE Proveedors ADD COLUMN mercaderias_compradas FLOAT DEFAULT 0");
+      console.log("Columna mercaderias_compradas agregada a Proveedors");
+    }
+    const hasDineroVentas = proveedorCols.some((c) => c.name === "dinero_ventas");
+    if (!hasDineroVentas) {
+      await sequelize.query("ALTER TABLE Proveedors ADD COLUMN dinero_ventas FLOAT DEFAULT 0");
+      console.log("Columna dinero_ventas agregada a Proveedors");
+    }
+
     const bancosDefault = ["Banco Nación", "Banco Provincia", "Banco Galicia", "Banco Santander", "Banco BBVA", "Banco Macro", "Banco Ciudad", "Banco Patagonia", "Banco Supervielle", "Banco Hipotecario"];
     for (const nombre of bancosDefault) {
       await Banco.findOrCreate({ where: { nombre }, defaults: { nombre } });

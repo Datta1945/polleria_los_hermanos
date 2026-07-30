@@ -105,7 +105,8 @@ export const crearVenta = async (req, res) => {
     let subtotalCalc = 0;
     for (const item of items) {
       const producto = await Producto.findByPk(item.productoId);
-      subtotalCalc += parseFloat(producto.precio) * item.cantidad;
+      const precioUnitario = item.precio_unitario !== undefined ? parseFloat(item.precio_unitario) : parseFloat(producto.precio);
+      subtotalCalc += precioUnitario * item.cantidad;
     }
 
     const esPagoDividido = pagos && pagos.length > 0;
@@ -213,11 +214,12 @@ export const crearVenta = async (req, res) => {
 
     for (const item of items) {
       const producto = await Producto.findByPk(item.productoId);
+      const precioUnitario = item.precio_unitario !== undefined ? parseFloat(item.precio_unitario) : parseFloat(producto.precio);
       await VentaItem.create({
         ventaId: venta.id,
         productoId: item.productoId,
         cantidad: item.cantidad,
-        precio_unitario: producto.precio,
+        precio_unitario: precioUnitario,
       });
       if (!esReparto) {
         await producto.update({ stock: producto.stock - item.cantidad });
@@ -254,6 +256,7 @@ export const getVentas = async (req, res) => {
     if (req.query.tipo_venta) where.tipo_venta = req.query.tipo_venta;
     if (req.query.usuarioId) where.usuarioId = req.query.usuarioId;
     if (req.query.medio_pago) where.medio_pago = req.query.medio_pago;
+    if (req.query.salidaCamionId) where.salidaCamionId = req.query.salidaCamionId;
     if (req.query.numero_comprobante) {
       where.numero_comprobante = { [Op.like]: `%${req.query.numero_comprobante}%` };
     }

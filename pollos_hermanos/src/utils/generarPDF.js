@@ -110,6 +110,26 @@ export const generarComprobantePDF = (venta) => {
 
   y += ventaBoxH + 4;
 
+  // ---- NOTAS / OBSERVACIONES ----
+  if (venta.notas) {
+    const notaLines = doc.splitTextToSize(venta.notas, cw - 8);
+    const notaBoxH = Math.max(18, 10 + notaLines.length * 5);
+    doc.setFillColor(254, 249, 237);
+    doc.rect(ml, y - 2, cw, notaBoxH, "F");
+    doc.setDrawColor(240, 210, 140);
+    doc.setLineWidth(0.3);
+    doc.rect(ml, y - 2, cw, notaBoxH, "S");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(180, 130, 20);
+    doc.text("OBSERVACIONES", ml + 4, y + 3);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 80, 30);
+    doc.text(notaLines, ml + 4, y + 10);
+    y += notaBoxH + 4;
+  }
+
   // ---- PAGOS TABLE ----
   if (pagos.length > 0) {
     doc.setFont("helvetica", "bold");
@@ -413,4 +433,267 @@ export const generarResumenPagosPDF = (pagos, fecha) => {
   doc.text("Documento generado automaticamente por el Sistema de Gestion Los Pollos Hermanos", pageWidth / 2, pageHeight - 12, { align: "center" });
 
   doc.save(`resumen-pagos-${fecha}.pdf`);
+};
+
+export const generarResumenEntregaPDF = (salida, ventas) => {
+  const doc = new jsPDF();
+  const pw = doc.internal.pageSize.getWidth();
+  const ph = doc.internal.pageSize.getHeight();
+  const ml = 15, mr = 15;
+  const cw = pw - ml - mr;
+
+  const rowH = 6;
+  const tableHeaderH = 7;
+  const padH = 3;
+
+  let y = 0;
+
+  const addPageIfNeeded = (spaceNeeded) => {
+    if (y + spaceNeeded > ph - 25) {
+      doc.addPage();
+      y = 15;
+    }
+  };
+
+  const drawEncabezado = () => {
+    doc.setFillColor(26, 26, 46);
+    doc.rect(0, 0, pw, 36, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.setTextColor(217, 119, 6);
+    doc.text("LOS POLLOS HERMANOS", ml, 12);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(148, 163, 184);
+    doc.text("Sistema de Gestion de Repartos", ml, 19);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(226, 232, 240);
+    doc.text("Resumen de Entrega", ml, 27);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(180, 185, 195);
+    doc.text(salida.fecha, ml + 50, 27);
+    y = 42;
+  };
+
+  const drawSectionTitle = (title) => {
+    addPageIfNeeded(12);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(26, 26, 46);
+    doc.setFillColor(245, 245, 248);
+    doc.rect(ml, y - 3, cw, 10, "F");
+    doc.text(title, ml + 3, y + 4);
+    y += 11;
+  };
+
+  const drawInfoBox = () => {
+    addPageIfNeeded(36);
+    doc.setFillColor(248, 249, 252);
+    doc.rect(ml, y - 3, cw, 30, "F");
+    doc.setDrawColor(220, 222, 228);
+    doc.setLineWidth(0.3);
+    doc.rect(ml, y - 3, cw, 30, "S");
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    doc.setTextColor(100, 100, 110);
+    doc.text("INFORMACION DE LA SALIDA", ml + 3, y);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(50, 50, 60);
+    doc.text(`Camion: ${salida.camion || "-"}`, ml + 3, y + 7);
+    doc.text(`Repartidor: ${salida.repartidor_asignado?.nombre || "-"}`, ml + 3, y + 13);
+    doc.text(`Destino: ${salida.destino || "-"}`, ml + 3, y + 19);
+    doc.text(`Total enviado: $${parseFloat(salida.monto_salida || 0).toFixed(2)}`, ml + 3, y + 25);
+    const neto = parseFloat(salida.monto_salida || 0) - parseFloat(salida.monto_regreso || 0);
+    doc.text(`Total devuelto: $${parseFloat(salida.monto_regreso || 0).toFixed(2)}`, ml + 80, y + 25);
+
+    y += 32;
+  };
+
+  const drawSimpleTable = (headers, colWidths, cellGetters, rows) => {
+    if (rows.length === 0) {
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(7);
+      doc.setTextColor(150, 150, 150);
+      doc.text("Sin datos", ml + 3, y + 4);
+      y += 9;
+      return;
+    }
+
+    addPageIfNeeded(tableHeaderH + rows.length * rowH + 8);
+
+    doc.setFillColor(230, 232, 240);
+    doc.rect(ml, y, cw, tableHeaderH, "F");
+    doc.setDrawColor(190, 192, 200);
+    doc.setLineWidth(0.3);
+    doc.rect(ml, y, cw, tableHeaderH, "S");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(6);
+    doc.setTextColor(40, 40, 50);
+    let hx = ml + padH;
+    for (let i = 0; i < headers.length; i++) {
+      doc.text(headers[i], hx, y + 4.5);
+      if (i < headers.length - 1) {
+        doc.setDrawColor(190, 192, 200);
+        doc.setLineWidth(0.15);
+        doc.line(hx + colWidths[i], y, hx + colWidths[i], y + tableHeaderH);
+      }
+      hx += colWidths[i];
+    }
+    y += tableHeaderH;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(6);
+    for (let i = 0; i < rows.length; i++) {
+      addPageIfNeeded(rowH + 4);
+      if (i % 2 === 1) {
+        doc.setFillColor(248, 249, 250);
+        doc.rect(ml, y, cw, rowH, "F");
+      }
+      doc.setDrawColor(215, 217, 223);
+      doc.setLineWidth(0.15);
+      doc.line(ml, y, ml + cw, y);
+      doc.setTextColor(50, 50, 60);
+      let rx = ml + padH;
+      for (let j = 0; j < cellGetters.length; j++) {
+        doc.text(String(cellGetters[j](rows[i])), rx, y + 4);
+        if (j < colWidths.length - 1) {
+          doc.setDrawColor(215, 217, 223);
+          doc.setLineWidth(0.1);
+          doc.line(rx + colWidths[j], y, rx + colWidths[j], y + rowH);
+        }
+        rx += colWidths[j];
+      }
+      y += rowH;
+    }
+    doc.setDrawColor(210, 210, 215);
+    doc.setLineWidth(0.3);
+    doc.line(ml, y, ml + cw, y);
+    y += 3;
+  };
+
+  // ---- Build PDF ----
+  drawEncabezado();
+  drawInfoBox();
+
+  // 1. Mercaderia enviada
+  drawSectionTitle("Mercaderia Enviada");
+  const enviados = salida.SalidaCamionItems || [];
+  drawSimpleTable(
+    ["Producto", "Cantidad", "P.Unit.", "Subtotal"],
+    [cw - 28 - 26 - 30, 28, 26, 30],
+    [
+      (r) => r.Producto?.nombre || "N/A",
+      (r) => r.cantidad,
+      (r) => `$${parseFloat(r.precio_unitario).toFixed(2)}`,
+      (r) => `$${(r.cantidad * parseFloat(r.precio_unitario)).toFixed(2)}`,
+    ],
+    enviados
+  );
+
+  // 2. Mercaderia devuelta
+  drawSectionTitle("Mercaderia Devuelta");
+  const devueltos = enviados.filter((item) => (item.cantidad_devuelta || 0) > 0);
+  drawSimpleTable(
+    ["Producto", "Devuelto", "P.Unit.", "Subtotal"],
+    [cw - 28 - 26 - 30, 28, 26, 30],
+    [
+      (r) => r.Producto?.nombre || "N/A",
+      (r) => r.cantidad_devuelta,
+      (r) => `$${parseFloat(r.precio_unitario).toFixed(2)}`,
+      (r) => `$${(r.cantidad_devuelta * parseFloat(r.precio_unitario)).toFixed(2)}`,
+    ],
+    devueltos
+  );
+
+  // 3. Ventas realizadas
+  drawSectionTitle("Ventas Realizadas");
+  const ventasItems = [];
+  for (const v of ventas) {
+    for (const vi of v.VentaItems || []) {
+      ventasItems.push({
+        comprobante: v.numero_comprobante,
+        cliente: v.cliente?.nombre || v.cliente_nombre || "-",
+        producto: vi.Producto?.nombre || "N/A",
+        cantidad: vi.cantidad,
+        precio: parseFloat(vi.precio_unitario),
+        subtotal: vi.cantidad * parseFloat(vi.precio_unitario),
+      });
+    }
+  }
+  const totalVentas = ventasItems.reduce((s, r) => s + r.subtotal, 0);
+
+  drawSimpleTable(
+    ["Comprobante", "Cliente", "Producto", "Cant.", "P.Unit.", "Subtotal"],
+    [38, 28, cw - 38 - 28 - 22 - 26 - 28, 22, 26, 28],
+    [
+      (r) => r.comprobante,
+      (r) => r.cliente,
+      (r) => r.producto,
+      (r) => r.cantidad,
+      (r) => `$${r.precio.toFixed(2)}`,
+      (r) => `$${r.subtotal.toFixed(2)}`,
+    ],
+    ventasItems
+  );
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.5);
+  doc.setTextColor(26, 26, 46);
+  doc.text(`Total Ventas: $${totalVentas.toFixed(2)}`, ml + 3, y + 4);
+  y += 8;
+
+  // 4. Observaciones de ventas
+  drawSectionTitle("Observaciones de Ventas");
+  const ventasConNotas = ventas.filter((v) => v.notas);
+  if (ventasConNotas.length > 0) {
+    for (const v of ventasConNotas) {
+      addPageIfNeeded(16);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7);
+      doc.setTextColor(60, 60, 70);
+      doc.text(`${v.numero_comprobante} - ${v.cliente?.nombre || v.cliente_nombre || "-"}`, ml + 3, y + 3);
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(7);
+      doc.setTextColor(100, 100, 100);
+      const lines = doc.splitTextToSize(v.notas, cw - 10);
+      doc.text(lines, ml + 6, y + 8);
+      y += 8 + lines.length * 4 + 2;
+    }
+  } else {
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(7);
+    doc.setTextColor(150, 150, 150);
+    doc.text("Sin observaciones", ml + 3, y + 4);
+    y += 9;
+  }
+
+  // Summary box
+  y = Math.max(y + 2, ph - 50);
+  doc.setFillColor(245, 246, 250);
+  doc.rect(ml, y, cw, 18, "F");
+  doc.setDrawColor(190, 192, 200);
+  doc.setLineWidth(0.4);
+  doc.rect(ml, y, cw, 18, "S");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(26, 26, 46);
+  doc.text("RESUMEN", ml + 4, y + 6);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7);
+  doc.setTextColor(60, 60, 70);
+  doc.text(`Enviado: $${parseFloat(salida.monto_salida || 0).toFixed(2)}`, ml + 4, y + 13);
+  doc.text(`Vendido: $${totalVentas.toFixed(2)}`, ml + 55, y + 13);
+  doc.text(`Devuelto: $${parseFloat(salida.monto_regreso || 0).toFixed(2)}`, ml + 120, y + 13);
+  y += 22;
+
+  // Footer
+  doc.setFontSize(6);
+  doc.setTextColor(170, 170, 180);
+  doc.text("Documento generado automaticamente por el Sistema de Gestion Los Pollos Hermanos", pw / 2, ph - 8, { align: "center" });
+
+  doc.save(`resumen-entrega-${salida.camion?.replace(/\s+/g, "-") || salida.id}-${salida.fecha}.pdf`);
 };

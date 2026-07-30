@@ -6,6 +6,8 @@ export default function ProductosPage() {
   const [proveedores, setProveedores] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [showAjuste, setShowAjuste] = useState(false);
+  const [porcentaje, setPorcentaje] = useState("");
   const [form, setForm] = useState({
     nombre: "",
     descripcion: "",
@@ -77,17 +79,69 @@ export default function ProductosPage() {
     <div>
       <div className="page-header">
         <h2>Productos</h2>
-        <button
-          className="btn btn-primary"
-          onClick={() => {
-            setShowForm(!showForm);
-            setEditing(null);
-            setForm({ nombre: "", descripcion: "", precio: "", stock: "", unidad: "pieza", proveedorId: "" });
-          }}
-        >
-          {showForm ? "Cancelar" : "+ Nuevo Producto"}
-        </button>
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <button
+            className="btn btn-secondary"
+            onClick={() => setShowAjuste(true)}
+          >
+            Aumentos
+          </button>
+          <button
+            className="btn btn-primary"
+            onClick={() => {
+              setShowForm(!showForm);
+              setEditing(null);
+              setForm({ nombre: "", descripcion: "", precio: "", stock: "", unidad: "pieza", proveedorId: "" });
+            }}
+          >
+            {showForm ? "Cancelar" : "+ Nuevo Producto"}
+          </button>
+        </div>
       </div>
+
+      {showAjuste && (
+        <div className="modal-overlay" onClick={() => setShowAjuste(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <h3>Ajuste de Precios</h3>
+            <p style={{ fontSize: "0.85rem", color: "#666", marginBottom: "1rem" }}>
+              Ingrese un porcentaje para aumentar o disminuir el precio de todos los productos activos.
+              Use valores negativos para disminuir (ej: -10).
+            </p>
+            <div className="form-group">
+              <label>Porcentaje (%)</label>
+              <input
+                type="number"
+                step="0.1"
+                value={porcentaje}
+                onChange={(e) => setPorcentaje(e.target.value)}
+                placeholder="Ej: 10 para +10%, -10 para -10%"
+                autoFocus
+              />
+            </div>
+            <div className="modal-actions">
+              <button className="btn btn-secondary" onClick={() => { setShowAjuste(false); setPorcentaje(""); }}>
+                Cancelar
+              </button>
+              <button
+                className="btn btn-primary"
+                disabled={porcentaje === "" || isNaN(parseFloat(porcentaje))}
+                onClick={async () => {
+                  try {
+                    await productosAPI.actualizarPrecios({ porcentaje: parseFloat(porcentaje) });
+                    setShowAjuste(false);
+                    setPorcentaje("");
+                    loadData();
+                  } catch (error) {
+                    alert("Error: " + (error.response?.data?.message || error.message));
+                  }
+                }}
+              >
+                Aplicar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showForm && (
         <form onSubmit={handleSubmit} className="form-card">

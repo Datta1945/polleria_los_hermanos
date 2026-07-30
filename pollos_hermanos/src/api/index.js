@@ -45,6 +45,7 @@ export const productosAPI = {
   create: (data) => API.post("/productos", data),
   update: (id, data) => API.put(`/productos/${id}`, data),
   delete: (id) => API.delete(`/productos/${id}`),
+  actualizarPrecios: (data) => API.put("/productos/actualizar-precios", data),
 };
 
 export const repartosAPI = {

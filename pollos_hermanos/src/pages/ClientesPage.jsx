@@ -11,6 +11,8 @@ export default function ClientesPage() {
   const [showPagoForm, setShowPagoForm] = useState(false);
   const [clientePago, setClientePago] = useState(null);
   const [pagosCC, setPagosCC] = useState([{ medio_pago: "efectivo", monto: 0 }]);
+  const [showDeudaModal, setShowDeudaModal] = useState(false);
+  const [clienteDeuda, setClienteDeuda] = useState(null);
 
   useEffect(() => {
     loadClientes();
@@ -89,7 +91,7 @@ export default function ClientesPage() {
 
   const totalPagosCC = pagosCC.reduce((sum, p) => sum + (parseFloat(p.monto) || 0), 0);
   const deudaActual = clientePago ? parseFloat(clientePago.saldo_pendiente) || 0 : 0;
-  const pagoValido = totalPagosCC > 0 && totalPagosCC <= deudaActual;
+  const pagoValido = totalPagosCC > 0;
 
   const submitPagoCC = async (e) => {
     e.preventDefault();
@@ -151,6 +153,61 @@ export default function ClientesPage() {
                 <button type="submit" className="btn btn-primary">{editando ? "Guardar" : "Crear"}</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showDeudaModal && clienteDeuda && (
+        <div className="modal-overlay" onClick={() => setShowDeudaModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div style={{ textAlign: "center", marginBottom: "1rem" }}>
+              <div style={{
+                width: "56px", height: "56px", borderRadius: "50%",
+                background: "rgba(239, 68, 68, 0.15)", display: "flex",
+                alignItems: "center", justifyContent: "center", margin: "0 auto 1rem"
+              }}>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 1a11 11 0 1 0 0 22 11 11 0 0 0 0-22z"/>
+                  <line x1="12" y1="8" x2="12" y2="12"/>
+                  <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+              </div>
+              <h3 style={{ color: "var(--danger)", marginBottom: "0.3rem" }}>Deuda Pendiente</h3>
+              <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)" }}>{clienteDeuda.nombre}</p>
+              <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "var(--danger)", marginTop: "0.5rem" }}>
+                ${(parseFloat(clienteDeuda.saldo_pendiente) || 0).toFixed(2)}
+              </div>
+            </div>
+            <div className="modal-actions" style={{ flexDirection: "column", gap: "0.5rem" }}>
+              <button
+                className="btn btn-primary btn-full"
+                onClick={async () => {
+                  try {
+                    await clientesAPI.registrarPagoCC(clienteDeuda.id, {
+                      pagos: [{ medio_pago: "efectivo", monto: parseFloat(clienteDeuda.saldo_pendiente) || 0 }],
+                    });
+                    setShowDeudaModal(false);
+                    loadClientes();
+                  } catch (error) {
+                    alert("Error: " + (error.response?.data?.message || error.message));
+                  }
+                }}
+              >
+                Pagar Total
+              </button>
+              <button
+                className="btn btn-secondary btn-full"
+                onClick={() => {
+                  setShowDeudaModal(false);
+                  openPagoCC(clienteDeuda);
+                }}
+              >
+                Registrar Pago
+              </button>
+              <button className="btn btn-sm btn-cancel" onClick={() => setShowDeudaModal(false)} style={{ marginTop: "0.5rem" }}>
+                Cancelar
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -258,7 +315,6 @@ export default function ClientesPage() {
                     onChange={(e) => handlePagoChange(index, e)}
                     min="0"
                     step="0.01"
-                    max={deudaActual}
                     placeholder="Monto"
                     required
                   />
@@ -278,7 +334,10 @@ export default function ClientesPage() {
               </div>
               <div className="resumen-row">
                 <span>Saldo restante:</span>
-                <strong>${(deudaActual - totalPagosCC).toFixed(2)}</strong>
+                <strong className={(deudaActual - totalPagosCC) < 0 ? "monto-regreso" : ""}>
+                  ${(deudaActual - totalPagosCC).toFixed(2)}
+                  {(deudaActual - totalPagosCC) < 0 ? " (a favor)" : ""}
+                </strong>
               </div>
               <div className="modal-actions">
                 <button type="button" className="btn btn-secondary" onClick={() => setShowPagoForm(false)}>Cancelar</button>
@@ -313,8 +372,13 @@ export default function ClientesPage() {
                 return (
                   <tr key={c.id}>
                     <td><strong>{c.nombre}</strong></td>
-                    <td className={saldo > 0 ? "monto-salida" : ""}>
-                      {saldo > 0 ? <strong>${saldo.toFixed(2)}</strong> : "$0.00"}
+                    <td
+                      className={saldo !== 0 ? "monto-salida" : ""}
+                      style={{ cursor: saldo > 0 ? "pointer" : "default" }}
+                      onClick={() => { if (saldo > 0) { setClienteDeuda(c); setShowDeudaModal(true); } }}
+                      title={saldo < 0 ? "Saldo a favor" : ""}
+                    >
+                      {saldo > 0 ? <strong>${saldo.toFixed(2)}</strong> : saldo < 0 ? <strong className="monto-regreso">A favor: $${Math.abs(saldo).toFixed(2)}</strong> : "$0.00"}
                     </td>
                     <td>${limite.toFixed(2)}</td>
                     <td className="monto-regreso">${disponible.toFixed(2)}</td>

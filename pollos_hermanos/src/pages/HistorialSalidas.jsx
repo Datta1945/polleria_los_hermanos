@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
-import { salidasAPI } from "../api";
+import { salidasAPI, ventasAPI } from "../api";
+import { generarResumenEntregaPDF } from "../utils/generarPDF";
 
 export default function HistorialSalidas() {
   const [salidas, setSalidas] = useState([]);
@@ -28,6 +29,18 @@ export default function HistorialSalidas() {
       loadSalidas();
     } catch (error) {
       alert("Error: " + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const handleDownloadResumen = async (id) => {
+    try {
+      const [salidaRes, ventasRes] = await Promise.all([
+        salidasAPI.getById(id),
+        ventasAPI.getAll({ salidaCamionId: id }),
+      ]);
+      generarResumenEntregaPDF(salidaRes.data, ventasRes.data);
+    } catch (error) {
+      alert("Error al generar resumen: " + (error.response?.data?.message || error.message));
     }
   };
 
@@ -102,15 +115,11 @@ export default function HistorialSalidas() {
               <tr>
                 <th>Fecha</th>
                 <th>Camión</th>
-                <th>Cliente</th>
-                <th>Mercadería</th>
-                <th>Total</th>
-                <th>Monto Salida</th>
-                <th>Monto Regreso</th>
                 <th>Repartidor</th>
                 <th>Creado por</th>
                 <th>Estado</th>
                 <th>Acciones</th>
+                <th>Mercadería</th>
               </tr>
             </thead>
             <tbody>
@@ -118,21 +127,6 @@ export default function HistorialSalidas() {
                 <tr key={s.id}>
                   <td>{s.fecha}</td>
                   <td><strong>{s.camion}</strong></td>
-                  <td>
-                    {s.cliente?.nombre || s.cliente_nombre}
-                  </td>
-                  <td>
-                    <div className="badge-grid">
-                      {s.SalidaCamionItems?.map((item) => (
-                        <span key={item.id} className="badge">
-                          {item.cantidad}x {item.Producto?.nombre}
-                        </span>
-                      ))}
-                    </div>
-                  </td>
-                  <td><strong>${s.precio_total}</strong></td>
-                  <td>{s.monto_salida ? <strong className="monto-salida">${s.monto_salida}</strong> : "-"}</td>
-                  <td>{s.monto_regreso ? <strong className="monto-regreso">${s.monto_regreso}</strong> : "-"}</td>
                   <td>{s.repartidor_asignado?.nombre || "-"}</td>
                   <td>{s.creado_por?.nombre || "-"}</td>
                   <td>
@@ -152,6 +146,23 @@ export default function HistorialSalidas() {
                         Eliminar
                       </button>
                     )}
+                    {s.estado === "entregado" && (
+                      <button
+                        className="btn btn-sm btn-primary"
+                        onClick={() => handleDownloadResumen(s.id)}
+                      >
+                        Resumen PDF
+                      </button>
+                    )}
+                  </td>
+                  <td>
+                    <div className="badge-grid">
+                      {s.SalidaCamionItems?.map((item) => (
+                        <span key={item.id} className="badge">
+                          {item.cantidad}x {item.Producto?.nombre}
+                        </span>
+                      ))}
+                    </div>
                   </td>
                 </tr>
               ))}

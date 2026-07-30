@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
-import { salidasAPI } from "../api";
+import { salidasAPI, ventasAPI } from "../api";
+
 
 export default function MisSalidas() {
   const { user } = useAuth();
@@ -27,9 +28,11 @@ export default function MisSalidas() {
     }
   };
 
-  const updateEstado = async (id, estado) => {
+  const [cancelMotivo, setCancelMotivo] = useState("");
+
+  const updateEstado = async (id, estado, notas) => {
     try {
-      await salidasAPI.updateStatus(id, { estado });
+      await salidasAPI.updateStatus(id, { estado, notas });
       loadSalidas();
     } catch (error) {
       alert("Error: " + (error.response?.data?.message || error.message));
@@ -92,7 +95,7 @@ export default function MisSalidas() {
           cantidad: item.cantidad_regreso,
         }));
 
-      await salidasAPI.registrarRegreso(regresando.id, {
+      const res = await salidasAPI.registrarRegreso(regresando.id, {
         items_regreso: items_para_enviar,
       });
       setRegresando(null);
@@ -118,7 +121,7 @@ export default function MisSalidas() {
       <p className="subtitle">Solo puedes cambiar el estado de tus salidas</p>
 
       {showCancelConfirm && (
-        <div className="modal-overlay" style={{ zIndex: 1001 }} onClick={() => setShowCancelConfirm(false)}>
+        <div className="modal-overlay" style={{ zIndex: 1001 }} onClick={() => { setShowCancelConfirm(false); setCancelMotivo(""); }}>
           <div className="modal-card modal-responsive" onClick={(e) => e.stopPropagation()}>
             <div style={{ textAlign: "center", marginBottom: "1rem" }}>
               <div style={{
@@ -134,15 +137,30 @@ export default function MisSalidas() {
               </div>
               <h3 style={{ color: "var(--danger)", marginBottom: "0.5rem" }}>Cancelar Envio</h3>
             </div>
-            <p style={{ textAlign: "center", color: "var(--text)", lineHeight: "1.6", marginBottom: "1.5rem" }}>
-              ¿Esta seguro de cancelar el envio de mercaderia?
-            </p>
+            <div className="form-group" style={{ marginBottom: "1rem" }}>
+              <label>Motivo de cancelacion</label>
+              <textarea
+                value={cancelMotivo}
+                onChange={(e) => setCancelMotivo(e.target.value)}
+                placeholder="Describa el motivo de la cancelacion..."
+                rows={3}
+                style={{ width: "100%", resize: "vertical" }}
+              />
+            </div>
             <div className="modal-actions">
-              <button className="btn btn-secondary" onClick={() => setShowCancelConfirm(false)}>
-                No, Volver
+              <button className="btn btn-secondary" onClick={() => { setShowCancelConfirm(false); setCancelMotivo(""); }}>
+                Volver
               </button>
-              <button className="btn btn-cancel" onClick={() => { setShowCancelConfirm(false); updateEstado(cancelandoId, "cancelado"); }}>
-                Si, Cancelar
+              <button
+                className="btn btn-cancel"
+                disabled={!cancelMotivo.trim()}
+                onClick={() => {
+                  setShowCancelConfirm(false);
+                  updateEstado(cancelandoId, "cancelado", cancelMotivo);
+                  setCancelMotivo("");
+                }}
+              >
+                Confirmar Cancelacion
               </button>
             </div>
           </div>
@@ -190,7 +208,7 @@ export default function MisSalidas() {
             <h3>Registrar Regreso - {regresando.camion}</h3>
             <p className="subtitle">Selecciona los productos que regresaron y sus cantidades</p>
 
-            <div className="table-container" style={{ maxHeight: "320px", overflowY: "auto" }}>
+            <div className="table-container" style={{ maxHeight: "200px", overflowY: "auto" }}>
               <table>
                 <thead>
                   <tr>
@@ -283,14 +301,6 @@ export default function MisSalidas() {
                   </td>
                   <td>
                     <div className="action-buttons">
-                      {s.estado === "pendiente" && (
-                        <button
-                          className="btn btn-sm btn-camino"
-                          onClick={() => updateEstado(s.id, "en_camino")}
-                        >
-                          Salir
-                        </button>
-                      )}
                       {s.estado === "en_camino" && (
                         <button
                           className="btn btn-sm btn-entregado"
@@ -299,13 +309,18 @@ export default function MisSalidas() {
                           Registrar Regreso
                         </button>
                       )}
-                      {s.estado !== "entregado" && s.estado !== "cancelado" && s.estado !== "sobrante" && (
+                      {s.estado === "en_camino" && (
                         <button
                           className="btn btn-sm btn-cancel"
                           onClick={() => { setCancelandoId(s.id); setShowCancelConfirm(true); }}
                         >
                           Cancelar
                         </button>
+                      )}
+                      {s.estado === "pendiente" && (
+                        <span style={{ fontSize: "0.8rem", color: "#888", fontStyle: "italic" }}>
+                          Esperando autorización
+                        </span>
                       )}
                     </div>
                   </td>

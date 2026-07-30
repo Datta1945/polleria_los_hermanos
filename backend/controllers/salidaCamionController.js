@@ -221,6 +221,7 @@ export const registrarRegreso = async (req, res) => {
               });
             }
             montoRegreso += producto.precio * item.cantidad;
+            await producto.update({ stock: producto.stock + item.cantidad });
             await salidaItem.update({ cantidad_devuelta: item.cantidad });
           }
         }
@@ -251,7 +252,9 @@ export const registrarRegreso = async (req, res) => {
 
 export const updateSalidaStatus = async (req, res) => {
   try {
-    const salida = await SalidaCamion.findByPk(req.params.id);
+    const salida = await SalidaCamion.findByPk(req.params.id, {
+      include: [{ model: SalidaCamionItem }],
+    });
     if (!salida) {
       return res.status(404).json({ message: "Salida no encontrada" });
     }
@@ -274,8 +277,11 @@ export const updateSalidaStatus = async (req, res) => {
 
     if (req.userRole === "repartidor") {
       const estadoActual = salida.estado;
-      if (estado === "en_camino" && estadoActual !== "pendiente") {
-        return res.status(400).json({ message: "Solo puedes cambiar de pendiente a en camino" });
+      if (estado === "en_camino") {
+        return res.status(403).json({ message: "Solo un administrador u operador puede marcar como en camino" });
+      }
+      if (estadoActual === "pendiente" && estado === "cancelado") {
+        return res.status(403).json({ message: "No puedes cancelar una salida pendiente, solicita a un administrador" });
       }
       if (estado === "entregado" && estadoActual !== "en_camino") {
         return res.status(400).json({ message: "Solo puedes entregar salidas que estan en camino" });
@@ -289,6 +295,31 @@ export const updateSalidaStatus = async (req, res) => {
       const ventasCount = await Venta.count({ where: { salidaCamionId: salida.id } });
       if (ventasCount === 0) {
         return res.status(400).json({ message: "Debe registrar al menos una Venta por Reparto antes de marcar como entregado" });
+      }
+    }
+
+    if (estado === "cancelado") {
+      const ventasReparto = await Venta.findAll({
+        where: { salidaCamionId: salida.id, estado: "completada" },
+        include: [{ model: VentaItem, attributes: ["productoId", "cantidad"] }],
+      });
+
+      const vendidoPorProducto = {};
+      for (const venta of ventasReparto) {
+        for (const vi of venta.VentaItems) {
+          vendidoPorProducto[vi.productoId] = (vendidoPorProducto[vi.productoId] || 0) + vi.cantidad;
+        }
+      }
+
+      for (const item of salida.SalidaCamionItems) {
+        const vendido = vendidoPorProducto[item.productoId] || 0;
+        const aRestaurar = item.cantidad - vendido;
+        if (aRestaurar > 0) {
+          const prod = await Producto.findByPk(item.productoId);
+          if (prod) {
+            await prod.update({ stock: prod.stock + aRestaurar });
+          }
+        }
       }
     }
 

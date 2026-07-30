@@ -28,6 +28,16 @@ const Proveedor = sequelize.define("Proveedor", {
     allowNull: true,
     comment: "Ej: pollos, garnacha, bebidas, etc.",
   },
+  mercaderias_compradas: {
+    type: DataTypes.FLOAT,
+    defaultValue: 0,
+    allowNull: true,
+  },
+  dinero_ventas: {
+    type: DataTypes.FLOAT,
+    defaultValue: 0,
+    allowNull: true,
+  },
   activo: {
     type: DataTypes.BOOLEAN,
     defaultValue: true,

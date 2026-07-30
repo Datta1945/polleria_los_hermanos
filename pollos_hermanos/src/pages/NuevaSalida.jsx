@@ -19,13 +19,17 @@ export default function NuevaSalida() {
 
   const isRepartidor = user?.role === "repartidor";
 
-  useEffect(() => {
+  const cargarProductos = () => {
     productosAPI.getAll().then((res) => {
       setProductos(res.data);
       const init = {};
       res.data.forEach((p) => { init[p.id] = 0; });
       setCantidades(init);
     }).catch(console.error);
+  };
+
+  useEffect(() => {
+    cargarProductos();
 
     if (!isRepartidor) {
       usuariosAPI.getRepartidores().then((res) => {
@@ -86,6 +90,7 @@ export default function NuevaSalida() {
         return reset;
       });
       setBusqueda("");
+      cargarProductos();
       setTimeout(() => setSuccess(false), 3000);
     } catch (error) {
       alert("Error: " + (error.response?.data?.message || error.message));
@@ -116,13 +121,19 @@ export default function NuevaSalida() {
               />
             </div>
             <div className="form-group">
-              <label>Destino</label>
-              <input
+              <label>Zonas</label>
+              <select
                 name="destino"
                 value={form.destino}
                 onChange={handleChange}
-                placeholder="Zona o direccion de destino"
-              />
+                required
+              >
+                <option value="" disabled hidden>Seleccionar zona...</option>
+                {Array.from({ length: 7 }, (_, i) => (
+                  <option key={i + 1} value={`Zona ${i + 1}`}>Zona {i + 1}</option>
+                ))}
+                <option value="Zona Carlos Paz">Zona Carlos Paz</option>
+              </select>
             </div>
           </div>
 

@@ -380,7 +380,12 @@ tr:hover {
 
 .action-buttons {
   display: flex;
-  gap: 4px;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.action-buttons .btn-sm {
+  width: 100%;
 }
 
 h2 {
@@ -1326,13 +1331,11 @@ input[type="number"] {
     padding: 0.3rem;
   }
   .action-buttons {
-    flex-direction: column;
     gap: 2px;
   }
   .action-buttons .btn-sm {
     font-size: 0.7rem;
     padding: 0.25rem 0.5rem;
-    width: 100%;
   }
   .badge-grid {
     grid-template-columns: repeat(2, 1fr);

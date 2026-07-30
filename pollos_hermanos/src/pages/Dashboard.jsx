@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { salidasAPI, cierreCajaAPI, productosAPI } from "../api";
+import { salidasAPI, cierreCajaAPI, productosAPI, ventasAPI } from "../api";
 import { generarResumenPagosPDF } from "../utils/generarPDF";
 
 export default function Dashboard() {
@@ -15,6 +15,8 @@ export default function Dashboard() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [cancelandoId, setCancelandoId] = useState(null);
+  const [cancelMotivo, setCancelMotivo] = useState("");
+  const [showStockBajo, setShowStockBajo] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -40,9 +42,9 @@ export default function Dashboard() {
     }
   };
 
-  const updateEstado = async (id, estado) => {
+  const updateEstado = async (id, estado, notas) => {
     try {
-      await salidasAPI.updateStatus(id, { estado });
+      await salidasAPI.updateStatus(id, { estado, notas });
       loadData();
     } catch (error) {
       alert("Error: " + (error.response?.data?.message || error.message));
@@ -105,7 +107,7 @@ export default function Dashboard() {
           cantidad: item.cantidad_regreso,
         }));
 
-      await salidasAPI.registrarRegreso(regresando.id, {
+      const res = await salidasAPI.registrarRegreso(regresando.id, {
         items_regreso: items_para_enviar,
       });
       setRegresando(null);
@@ -120,7 +122,20 @@ export default function Dashboard() {
     if (salida) openRegresoForm(salida);
   };
 
+  const [cierreExitoso, setCierreExitoso] = useState(false);
+  const [showPendientesCierre, setShowPendientesCierre] = useState(false);
+  const [salidasPendientesCierre, setSalidasPendientesCierre] = useState([]);
+
   const handleCerrarCaja = async () => {
+    const pendientes = salidas.filter((s) => s.estado === "pendiente");
+    const enCamino = salidas.filter((s) => s.estado === "en_camino");
+
+    if (pendientes.length > 0 || enCamino.length > 0) {
+      setSalidasPendientesCierre([...pendientes, ...enCamino]);
+      setShowPendientesCierre(true);
+      return;
+    }
+
     if (!confirm("¿Cerrar la caja del dia? No se podran hacer mas modificaciones.")) return;
     setCerrando(true);
     try {
@@ -130,8 +145,10 @@ export default function Dashboard() {
         const hoy = new Date().toISOString().split("T")[0];
         generarResumenPagosPDF(res.data, hoy);
       }
-      alert("Caja cerrada exitosamente!");
-      loadData();
+      setCierreExitoso(true);
+      setSalidas([]);
+      setStats(null);
+      setResumen(null);
     } catch (error) {
       alert("Error: " + (error.response?.data?.message || error.message));
     } finally {
@@ -171,10 +188,26 @@ export default function Dashboard() {
 
   return (
     <div>
-      <h2>Dashboard</h2>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+        <h2 style={{ margin: 0 }}>Dashboard</h2>
+        {stockBajo.length > 0 && (
+          <button
+            className="btn btn-sm btn-cancel"
+            style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}
+            onClick={() => setShowStockBajo(true)}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+              <line x1="12" y1="9" x2="12" y2="13"/>
+              <line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            Stock Bajo ({stockBajo.length})
+          </button>
+        )}
+      </div>
 
       {showCancelConfirm && (
-        <div className="modal-overlay" style={{ zIndex: 1001 }} onClick={() => setShowCancelConfirm(false)}>
+        <div className="modal-overlay" style={{ zIndex: 1001 }} onClick={() => { setShowCancelConfirm(false); setCancelMotivo(""); }}>
           <div className="modal-card modal-responsive" onClick={(e) => e.stopPropagation()}>
             <div style={{ textAlign: "center", marginBottom: "1rem" }}>
               <div style={{
@@ -190,15 +223,30 @@ export default function Dashboard() {
               </div>
               <h3 style={{ color: "var(--danger)", marginBottom: "0.5rem" }}>Cancelar Envio</h3>
             </div>
-            <p style={{ textAlign: "center", color: "var(--text)", lineHeight: "1.6", marginBottom: "1.5rem" }}>
-              Desea cancelar el envio?
-            </p>
+            <div className="form-group" style={{ marginBottom: "1rem" }}>
+              <label>Motivo de cancelacion</label>
+              <textarea
+                value={cancelMotivo}
+                onChange={(e) => setCancelMotivo(e.target.value)}
+                placeholder="Describa el motivo de la cancelacion..."
+                rows={3}
+                style={{ width: "100%", resize: "vertical" }}
+              />
+            </div>
             <div className="modal-actions">
-              <button className="btn btn-secondary" onClick={() => setShowCancelConfirm(false)}>
-                No, Volver
+              <button className="btn btn-secondary" onClick={() => { setShowCancelConfirm(false); setCancelMotivo(""); }}>
+                Volver
               </button>
-              <button className="btn btn-cancel" onClick={() => { setShowCancelConfirm(false); updateEstado(cancelandoId, "cancelado"); }}>
-                Si, Cancelar
+              <button
+                className="btn btn-cancel"
+                disabled={!cancelMotivo.trim()}
+                onClick={() => {
+                  setShowCancelConfirm(false);
+                  updateEstado(cancelandoId, "cancelado", cancelMotivo);
+                  setCancelMotivo("");
+                }}
+              >
+                Confirmar Cancelacion
               </button>
             </div>
           </div>
@@ -246,7 +294,7 @@ export default function Dashboard() {
             <h3>Registrar Entrega - {regresando.camion}</h3>
             <p className="subtitle">Selecciona los productos que regresaron y sus cantidades</p>
 
-            <div className="table-container">
+            <div className="table-container" style={{ maxHeight: "200px", overflowY: "auto" }}>
               <table>
                 <thead>
                   <tr>
@@ -307,7 +355,73 @@ export default function Dashboard() {
         </div>
       )}
 
-      {stats && (
+      {showPendientesCierre && (
+        <div className="modal-overlay" onClick={() => setShowPendientesCierre(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div style={{ textAlign: "center", marginBottom: "1rem" }}>
+              <div style={{
+                width: "56px", height: "56px", borderRadius: "50%",
+                background: "rgba(239, 68, 68, 0.15)", display: "flex",
+                alignItems: "center", justifyContent: "center", margin: "0 auto 1rem"
+              }}>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="15" y1="9" x2="9" y2="15"/>
+                  <line x1="9" y1="9" x2="15" y2="15"/>
+                </svg>
+              </div>
+              <h3 style={{ color: "var(--danger)", marginBottom: "0.5rem" }}>Envios sin Finalizar</h3>
+              <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem" }}>
+                No se puede cerrar la caja. Las siguientes salidas estan sin finalizar:
+              </p>
+            </div>
+            <div className="table-container" style={{ maxHeight: "200px", overflowY: "auto" }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Estado</th>
+                    <th>Camion</th>
+                    <th>Zona</th>
+                    <th>Repartidor</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {salidasPendientesCierre.map((s) => (
+                    <tr key={s.id}>
+                      <td>
+                        <span className="estado-badge" style={{
+                          backgroundColor: s.estado === "pendiente" ? "#f59e0b" : "#3b82f6",
+                          fontSize: "0.7rem", padding: "2px 6px"
+                        }}>
+                          {s.estado === "pendiente" ? "Pendiente" : "En Camino"}
+                        </span>
+                      </td>
+                      <td><strong>{s.camion}</strong></td>
+                      <td>{s.destino || "-"}</td>
+                      <td>{s.repartidor_asignado?.nombre || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="modal-actions">
+              <button className="btn btn-primary btn-full" onClick={() => setShowPendientesCierre(false)}>
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cierreExitoso && (
+        <div className="section" style={{ textAlign: "center", padding: "3rem 1rem" }}>
+          <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>✅</div>
+          <h3 style={{ color: "var(--success)", marginBottom: "0.5rem" }}>Caja Cerrada Exitosamente</h3>
+          <p style={{ color: "var(--text-secondary)" }}>El dia ha sido cerrado. No se pueden realizar mas operaciones.</p>
+        </div>
+      )}
+
+      {!cierreExitoso && stats && (
         <div className="stats-grid">
           <div className="stat-card">
             <h3>{stats.total}</h3>
@@ -332,30 +446,51 @@ export default function Dashboard() {
         </div>
       )}
 
-      {stockBajo.length > 0 && (
-        <div className="section">
-          <h3>Stock Bajo</h3>
-          <div className="table-container">
-            <table>
-              <thead>
-                <tr>
-                  <th>Producto</th>
-                  <th>Stock Actual</th>
-                  <th>Stock Minimo</th>
-                  <th>Proveedor</th>
-                </tr>
-              </thead>
-              <tbody>
-                {stockBajo.map((p) => (
-                  <tr key={p.id}>
-                    <td><strong>{p.nombre}</strong></td>
-                    <td><strong className="stock-bajo">{p.stock}</strong></td>
-                    <td>{p.stock_minimo}</td>
-                    <td>{p.Proveedor?.nombre || "-"}</td>
+      {showStockBajo && stockBajo.length > 0 && (
+        <div className="modal-overlay" onClick={() => setShowStockBajo(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div style={{ textAlign: "center", marginBottom: "1rem" }}>
+              <div style={{
+                width: "56px", height: "56px", borderRadius: "50%",
+                background: "rgba(239, 68, 68, 0.15)", display: "flex",
+                alignItems: "center", justifyContent: "center", margin: "0 auto 1rem"
+              }}>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                  <line x1="12" y1="9" x2="12" y2="13"/>
+                  <line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+              </div>
+              <h3 style={{ color: "var(--danger)", marginBottom: "0.5rem" }}>Stock Bajo</h3>
+              <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem" }}>Los siguientes productos tienen stock por debajo del minimo:</p>
+            </div>
+            <div className="table-container" style={{ maxHeight: "250px", overflowY: "auto" }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Producto</th>
+                    <th>Stock Actual</th>
+                    <th>Stock Minimo</th>
+                    <th>Proveedor</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {stockBajo.map((p) => (
+                    <tr key={p.id}>
+                      <td><strong>{p.nombre}</strong></td>
+                      <td><strong className="stock-bajo">{p.stock}</strong></td>
+                      <td>{p.stock_minimo}</td>
+                      <td>{p.Proveedor?.nombre || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="modal-actions">
+              <button className="btn btn-primary btn-full" onClick={() => setShowStockBajo(false)}>
+                Entendido
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -528,85 +663,87 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="section">
-        <h3>Salidas de Hoy ({salidas.length})</h3>
-        {salidas.length === 0 ? (
-          <p className="empty">No hay salidas registradas hoy</p>
-        ) : (
-          <div className="table-container">
-            <table>
-              <thead>
-                <tr>
-                  <th>Camion</th>
-                  <th>Estado</th>
-                  <th>Acciones</th>
-                  <th>Repartidor</th>
-                  <th>Monto Salida</th>
-                  <th>Monto Regreso</th>
-                  <th>Total</th>
-                  <th>Mercaderia</th>
-                </tr>
-              </thead>
-              <tbody>
-                {salidas.map((s) => (
-                  <tr key={s.id}>
-                    <td><strong>{s.camion}</strong></td>
-                    <td>
-                      <span
-                        className="estado-badge"
-                        style={{ backgroundColor: estadoColors[s.estado] }}
-                      >
-                        {s.estado.replace("_", " ")}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="action-buttons">
-                        {s.estado === "pendiente" && (
-                          <button
-                            className="btn btn-sm btn-camino"
-                            onClick={() => updateEstado(s.id, "en_camino")}
-                          >
-                            Enviar
-                          </button>
-                        )}
-                        {s.estado === "en_camino" && (
-                          <button
-                            className="btn btn-sm btn-entregado"
-                            onClick={() => handleEntregadoClick(s.id)}
-                          >
-                            Registrar Entrega
-                          </button>
-                        )}
-                        {s.estado !== "entregado" && s.estado !== "cancelado" && (
-                          <button
-                            className="btn btn-sm btn-cancel"
-                            onClick={() => { setCancelandoId(s.id); setShowCancelConfirm(true); }}
-                          >
-                            Cancelar
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                    <td>{s.repartidor_asignado?.nombre || "-"}</td>
-                    <td>{s.monto_salida ? <strong className="monto-salida">${s.monto_salida}</strong> : "-"}</td>
-                    <td>{s.monto_regreso ? <strong className="monto-regreso">${s.monto_regreso}</strong> : "-"}</td>
-                    <td><strong>${(parseFloat(s.monto_salida || 0) - parseFloat(s.monto_regreso || 0)).toFixed(2)}</strong></td>
-                    <td>
-                      <div className="badge-grid">
-                        {s.SalidaCamionItems?.map((item) => (
-                          <span key={item.id} className="badge">
-                            {item.cantidad}x {item.Producto?.nombre}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
+      {!cierreExitoso && (
+        <div className="section">
+          <h3>Salidas de Hoy ({salidas.length})</h3>
+          {salidas.length === 0 ? (
+            <p className="empty">No hay salidas registradas hoy</p>
+          ) : (
+            <div className="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Zona</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                    <th>Repartidor</th>
+                    <th>Monto Salida</th>
+                    <th>Monto Regreso</th>
+                    <th>Total</th>
+                    <th>Mercaderia</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+                </thead>
+                <tbody>
+                  {salidas.map((s) => (
+                    <tr key={s.id}>
+                      <td><strong>{s.destino || "-"}</strong></td>
+                      <td>
+                        <span
+                          className="estado-badge"
+                          style={{ backgroundColor: estadoColors[s.estado] }}
+                        >
+                          {s.estado.replace("_", " ")}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="action-buttons">
+                          {s.estado === "pendiente" && (
+                            <button
+                              className="btn btn-sm btn-camino"
+                              onClick={() => updateEstado(s.id, "en_camino")}
+                            >
+                              Enviar
+                            </button>
+                          )}
+                          {s.estado === "en_camino" && (
+                            <button
+                              className="btn btn-sm btn-entregado"
+                              onClick={() => handleEntregadoClick(s.id)}
+                            >
+                              Registrar Entrega
+                            </button>
+                          )}
+                          {s.estado !== "entregado" && s.estado !== "cancelado" && (
+                            <button
+                              className="btn btn-sm btn-cancel"
+                              onClick={() => { setCancelandoId(s.id); setShowCancelConfirm(true); }}
+                            >
+                              Cancelar
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                      <td>{s.repartidor_asignado?.nombre || "-"}</td>
+                      <td>{s.monto_salida ? <strong className="monto-salida">${s.monto_salida}</strong> : "-"}</td>
+                      <td>{s.monto_regreso ? <strong className="monto-regreso">${s.monto_regreso}</strong> : "-"}</td>
+                      <td><strong>${(parseFloat(s.monto_salida || 0) - parseFloat(s.monto_regreso || 0)).toFixed(2)}</strong></td>
+                      <td>
+                        <div className="badge-grid">
+                          {s.SalidaCamionItems?.map((item) => (
+                            <span key={item.id} className="badge">
+                              {item.cantidad}x {item.Producto?.nombre}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

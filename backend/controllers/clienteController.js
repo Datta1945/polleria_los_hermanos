@@ -116,13 +116,7 @@ export const registrarPagoCuentaCorriente = async (req, res) => {
       return res.status(400).json({ message: "El total del pago debe ser mayor a 0" });
     }
 
-    if (totalPago > parseFloat(cliente.saldo_pendiente)) {
-      return res.status(400).json({
-        message: `El pago ($${totalPago.toFixed(2)}) excede la deuda ($${parseFloat(cliente.saldo_pendiente).toFixed(2)})`,
-      });
-    }
-
-    const nuevoSaldo = Math.max(0, parseFloat(cliente.saldo_pendiente) - totalPago);
+    const nuevoSaldo = parseFloat(cliente.saldo_pendiente) - totalPago;
     await cliente.update({ saldo_pendiente: nuevoSaldo.toFixed(2) });
 
     const now = new Date();

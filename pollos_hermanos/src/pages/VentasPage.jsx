@@ -355,6 +355,7 @@ export default function VentasPage() {
         items: productosSeleccionados.map((p) => ({
           productoId: p.id,
           cantidad: cantidades[p.id],
+          precio_unitario: p.precio,
         })),
       };
       if (esReparto && camionSeleccionado) {
@@ -587,11 +588,16 @@ export default function VentasPage() {
               <label>Cliente *</label>
               <select name="clienteId" value={form.clienteId} onChange={handleClienteChange} required>
                 <option value="">Seleccionar cliente</option>
-                {clientes.filter((c) => c.nombre !== "Seleccionar cliente").map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.nombre}
-                  </option>
-                ))}
+                {clientes.filter((c) => c.nombre !== "Seleccionar cliente").map((c) => {
+                  const saldoCliente = parseFloat(c.saldo_pendiente) || 0;
+                  let label = c.nombre;
+
+                  return (
+                    <option key={c.id} value={c.id}>
+                      {label}
+                    </option>
+                  );
+                })}
                 <option value="nuevo">+ Nuevo Cliente</option>
               </select>
             </div>
@@ -603,7 +609,7 @@ export default function VentasPage() {
                 <span style={{ fontWeight: "bold", color: "#e74c3c" }}>
                   Deuda pendiente en cuenta corriente:
                 </span>
-                <strong className="monto-salida">${deudaAnterior.toFixed(2)}</strong>
+                <strong className="monto-regreso">${deudaAnterior.toFixed(2)}</strong>
               </div>
               <div className="form-group" style={{ marginTop: "0.5rem" }}>
                 <label style={{ cursor: "pointer" }}>
@@ -619,9 +625,19 @@ export default function VentasPage() {
               {pagarDeuda && (
                 <div className="resumen-row" style={{ marginTop: "0.25rem" }}>
                   <span>Monto de deuda a pagar:</span>
-                  <strong className="monto-salida">${deudaAnterior.toFixed(2)}</strong>
+                  <strong className="monto-regreso">${deudaAnterior.toFixed(2)}</strong>
                 </div>
               )}
+            </div>
+          )}
+          {clienteSeleccionado && deudaAnterior < 0 && (
+            <div className="form-card" style={{ marginTop: "0.5rem", borderLeft: "3px solid #10b981" }}>
+              <div className="resumen-row">
+                <span style={{ fontWeight: "bold", color: "#10b981" }}>
+                  Saldo a favor en cuenta corriente:
+                </span>
+                <strong style={{ color: "#10b981", fontWeight: "bold" }}>${Math.abs(deudaAnterior).toFixed(2)}</strong>
+              </div>
             </div>
           )}
 
@@ -837,12 +853,6 @@ export default function VentasPage() {
             </div>
           )}
 
-          {tieneDeuda && !pagarDeuda && (
-            <div className="resumen-row" style={{ opacity: 0.6 }}>
-              <span>Deuda pendiente:</span>
-              <strong className="monto-salida">${deudaAnterior.toFixed(2)}</strong>
-            </div>
-          )}
 
           {pagarDeuda && tieneDeuda && (
             <>
@@ -852,7 +862,7 @@ export default function VentasPage() {
               </div>
               <div className="resumen-row">
                 <span>Pago de deuda:</span>
-                <strong className="monto-salida">${deudaAnterior.toFixed(2)}</strong>
+                <strong className="monto-regreso">${deudaAnterior.toFixed(2)}</strong>
               </div>
               <div className="cierre-separator"></div>
             </>
@@ -862,7 +872,7 @@ export default function VentasPage() {
             <>
               <div className="resumen-row">
                 <span>Deuda anterior:</span>
-                <strong className="monto-salida">${deudaAnterior.toFixed(2)}</strong>
+                <strong className="monto-regreso">${deudaAnterior.toFixed(2)}</strong>
               </div>
               <div className="resumen-row">
                 <span>Monto CC esta venta:</span>
@@ -878,13 +888,19 @@ export default function VentasPage() {
           {pagarDeuda && tieneDeuda && (
             <div className="resumen-row">
               <span>+ Deuda a pagar:</span>
-              <strong className="monto-salida">${deudaAnterior.toFixed(2)}</strong>
+              <strong className="monto-regreso">${deudaAnterior.toFixed(2)}</strong>
             </div>
           )}
-          {(tieneCCSimple || tieneCCDividido) && (
+          {(tieneCCSimple || tieneCCDividido) && totalAcumulado >= 0 && (
             <div className="resumen-row resumen-total">
               <span>Total a deber:</span>
-              <strong className="monto-salida">${totalAcumulado.toFixed(2)}</strong>
+              <strong className="monto-regreso">${totalAcumulado.toFixed(2)}</strong>
+            </div>
+          )}
+          {(tieneCCSimple || tieneCCDividido) && totalAcumulado < 0 && (
+            <div className="resumen-row resumen-total">
+              <span>Saldo a favor:</span>
+              <strong style={{ color: "#10b981", fontWeight: "bold" }}>${Math.abs(totalAcumulado).toFixed(2)}</strong>
             </div>
           )}
           {!(tieneCCSimple || tieneCCDividido) && (
@@ -893,14 +909,7 @@ export default function VentasPage() {
               <strong className="monto-ventas">${totalConDeuda.toFixed(2)}</strong>
             </div>
           )}
-          {(tieneCCSimple || tieneCCDividido) && (
-            <div className="resumen-row">
-              <span>Credito disponible:</span>
-              <strong className={excedeCredito ? "monto-salida" : "monto-regreso"}>
-                ${(limiteCredito - totalAcumulado).toFixed(2)}
-              </strong>
-            </div>
-          )}
+
           {excedeCredito && (
             <div className="error-msg" style={{ marginTop: "0.5rem" }}>
               El cliente excede su limite de credito. Debe reducir la deuda o que un administrador autorice.

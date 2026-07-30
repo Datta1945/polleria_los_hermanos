@@ -12,6 +12,8 @@ export default function ProveedoresPage() {
     email: "",
     tipo_producto: "",
   });
+  const [saldosModal, setSaldosModal] = useState(null);
+  const [saldosForm, setSaldosForm] = useState({ mercaderias_compradas: 0, dinero_ventas: 0 });
 
   useEffect(() => {
     loadProveedores();
@@ -62,6 +64,25 @@ export default function ProveedoresPage() {
       loadProveedores();
     } catch (error) {
       alert("Error al eliminar");
+    }
+  };
+
+  const openSaldosModal = (proveedor) => {
+    setSaldosModal(proveedor);
+    setSaldosForm({
+      mercaderias_compradas: proveedor.mercaderias_compradas || 0,
+      dinero_ventas: proveedor.dinero_ventas || 0,
+    });
+  };
+
+  const saveSaldos = async () => {
+    if (!saldosModal) return;
+    try {
+      await proveedoresAPI.update(saldosModal.id, saldosForm);
+      setSaldosModal(null);
+      loadProveedores();
+    } catch (error) {
+      alert("Error: " + (error.response?.data?.message || error.message));
     }
   };
 
@@ -132,11 +153,74 @@ export default function ProveedoresPage() {
         </form>
       )}
 
+      {saldosModal && (
+        <div className="modal-overlay" onClick={() => setSaldosModal(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div style={{ textAlign: "center", marginBottom: "1rem" }}>
+              <div style={{
+                width: "56px", height: "56px", borderRadius: "50%",
+                background: "rgba(59, 130, 246, 0.15)", display: "flex",
+                alignItems: "center", justifyContent: "center", margin: "0 auto 1rem"
+              }}>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="1" x2="12" y2="23"/>
+                  <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                </svg>
+              </div>
+              <h3 style={{ marginBottom: "0.5rem" }}>Saldos y Diferencias</h3>
+              <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem" }}>
+                {saldosModal.nombre}
+              </p>
+            </div>
+            <div className="form-group">
+              <label>Mercaderias Compradas</label>
+              <div style={{ position: "relative" }}>
+                <span style={{ position: "absolute", left: "10px", top: "8px", fontWeight: "bold", color: "var(--danger)", zIndex: 1 }}>-</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={Math.abs(saldosForm.mercaderias_compradas)}
+                  onChange={(e) => setSaldosForm({ ...saldosForm, mercaderias_compradas: -(parseFloat(e.target.value) || 0) })}
+                  style={{ paddingLeft: "1.5rem" }}
+                />
+              </div>
+            </div>
+            <div className="form-group">
+              <label>Dinero por Ventas</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={saldosForm.dinero_ventas}
+                onChange={(e) => setSaldosForm({ ...saldosForm, dinero_ventas: parseFloat(e.target.value) || 0 })}
+              />
+            </div>
+            <div className="form-group">
+              <label>Diferencias</label>
+              <div style={{
+                padding: "0.6rem 0.75rem", borderRadius: "6px",
+                border: "1px solid var(--border)",
+                fontWeight: "bold", fontSize: "1.1rem",
+                color: (saldosForm.dinero_ventas + saldosForm.mercaderias_compradas) >= 0 ? "var(--success)" : "var(--danger)"
+              }}>
+                ${(saldosForm.dinero_ventas + saldosForm.mercaderias_compradas).toFixed(2)}
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button className="btn btn-secondary" onClick={() => setSaldosModal(null)}>Cerrar</button>
+              <button className="btn btn-primary" onClick={saveSaldos}>Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="table-container">
         <table>
           <thead>
             <tr>
               <th>Nombre</th>
+              <th>Diferencias</th>
               <th>Teléfono</th>
               <th>Dirección</th>
               <th>Email</th>
@@ -146,24 +230,35 @@ export default function ProveedoresPage() {
             </tr>
           </thead>
           <tbody>
-            {proveedores.map((p) => (
-              <tr key={p.id}>
-                <td><strong>{p.nombre}</strong></td>
-                <td>{p.telefono || "-"}</td>
-                <td>{p.direccion || "-"}</td>
-                <td>{p.email || "-"}</td>
-                <td>{p.tipo_producto || "-"}</td>
-                <td>{p.Productos?.length || 0}</td>
-                <td>
-                  <button className="btn btn-sm btn-camino" onClick={() => handleEdit(p)}>
-                    Editar
-                  </button>
-                  <button className="btn btn-sm btn-cancel" onClick={() => handleDelete(p.id)}>
-                    Eliminar
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {proveedores.map((p) => {
+              const diferencia = (p.dinero_ventas || 0) + (p.mercaderias_compradas || 0);
+              return (
+                <tr key={p.id}>
+                  <td><strong>{p.nombre}</strong></td>
+                  <td>
+                    <strong style={{ color: diferencia >= 0 ? "var(--success)" : "var(--danger)" }}>
+                      ${diferencia.toFixed(2)}
+                    </strong>
+                  </td>
+                  <td>{p.telefono || "-"}</td>
+                  <td>{p.direccion || "-"}</td>
+                  <td>{p.email || "-"}</td>
+                  <td>{p.tipo_producto || "-"}</td>
+                  <td>{p.Productos?.length || 0}</td>
+                  <td>
+                    <button className="btn btn-sm btn-camino" onClick={() => handleEdit(p)}>
+                      Editar
+                    </button>
+                    <button className="btn btn-sm btn-primary" onClick={() => openSaldosModal(p)}>
+                      Saldos y Dif
+                    </button>
+                    <button className="btn btn-sm btn-cancel" onClick={() => handleDelete(p.id)}>
+                      Eliminar
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
